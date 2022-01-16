@@ -8,46 +8,34 @@ package rkmuxpanic
 
 import (
 	"context"
-	"fmt"
 	"github.com/gorilla/mux"
 	"github.com/rookie-ninja/rk-common/error"
+	rkmid "github.com/rookie-ninja/rk-entry/middleware"
+	rkmidpanic "github.com/rookie-ninja/rk-entry/middleware/panic"
 	"github.com/rookie-ninja/rk-mux/interceptor"
 	"github.com/rookie-ninja/rk-mux/interceptor/context"
-	"go.uber.org/zap"
 	"net/http"
-	"runtime/debug"
 )
 
 // Interceptor returns a rest.Middleware (middleware)
-func Interceptor(opts ...Option) mux.MiddlewareFunc {
-	set := newOptionSet(opts...)
+func Interceptor(opts ...rkmidpanic.Option) mux.MiddlewareFunc {
+	set := rkmidpanic.NewOptionSet(opts...)
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
 			// wrap writer
 			writer = rkmuxinter.WrapResponseWriter(writer)
 
-			req = req.WithContext(context.WithValue(req.Context(), rkmuxinter.RpcEntryNameKey, set.EntryName))
+			ctx := context.WithValue(req.Context(), rkmid.EntryNameKey, set.GetEntryName())
+			req = req.WithContext(ctx)
 
-			defer func() {
-				if recv := recover(); recv != nil {
-					var res *rkerror.ErrorResp
+			handlerFunc := func(resp *rkerror.ErrorResp) {
+				rkmuxinter.WriteJson(writer, resp.Err.Code, resp)
+			}
+			beforeCtx := set.BeforeCtx(rkmuxctx.GetEvent(req), rkmuxctx.GetLogger(req, writer), handlerFunc)
+			set.Before(beforeCtx)
 
-					if se, ok := recv.(*rkerror.ErrorResp); ok {
-						res = se
-					} else if re, ok := recv.(error); ok {
-						res = rkerror.FromError(re)
-					} else {
-						res = rkerror.New(rkerror.WithMessage(fmt.Sprintf("%v", recv)))
-					}
-
-					rkmuxctx.GetEvent(req).SetCounter("panic", 1)
-					rkmuxctx.GetEvent(req).AddErr(res.Err)
-					rkmuxctx.GetLogger(req, writer).Error(fmt.Sprintf("panic occurs:\n%s", string(debug.Stack())), zap.Error(res.Err))
-
-					rkmuxinter.WriteJson(writer, http.StatusInternalServerError, res)
-				}
-			}()
+			defer beforeCtx.Output.DeferFunc()
 
 			next.ServeHTTP(writer, req)
 		})

@@ -9,32 +9,29 @@ package rkmuxlimit
 import (
 	"context"
 	"github.com/gorilla/mux"
-	"github.com/rookie-ninja/rk-common/error"
+	rkmid "github.com/rookie-ninja/rk-entry/middleware"
+	rkmidlimit "github.com/rookie-ninja/rk-entry/middleware/ratelimit"
 	"github.com/rookie-ninja/rk-mux/interceptor"
-	"github.com/rookie-ninja/rk-mux/interceptor/context"
 	"net/http"
 )
 
 // Interceptor Add rate limit interceptors.
-func Interceptor(opts ...Option) mux.MiddlewareFunc {
-	set := newOptionSet(opts...)
+func Interceptor(opts ...rkmidlimit.Option) mux.MiddlewareFunc {
+	set := rkmidlimit.NewOptionSet(opts...)
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
 			// wrap writer
 			writer = rkmuxinter.WrapResponseWriter(writer)
 
-			req = req.WithContext(context.WithValue(req.Context(), rkmuxinter.RpcEntryNameKey, set.EntryName))
+			ctx := context.WithValue(req.Context(), rkmid.EntryNameKey, set.GetEntryName())
+			req = req.WithContext(ctx)
 
-			event := rkmuxctx.GetEvent(req)
+			beforeCtx := set.BeforeCtx(req)
+			set.Before(beforeCtx)
 
-			if duration, err := set.Wait(req); err != nil {
-				event.SetCounter("rateLimitWaitMs", duration.Milliseconds())
-				event.AddErr(err)
-
-				rkmuxinter.WriteJson(writer, http.StatusTooManyRequests, rkerror.New(
-					rkerror.WithHttpCode(http.StatusTooManyRequests),
-					rkerror.WithMessage(err.Error())))
+			if beforeCtx.Output.ErrResp != nil {
+				rkmuxinter.WriteJson(writer, beforeCtx.Output.ErrResp.Err.Code, beforeCtx.Output.ErrResp)
 				return
 			}
 

@@ -9,95 +9,46 @@ package rkmuxcsrf
 import (
 	"context"
 	"github.com/gorilla/mux"
-	"github.com/rookie-ninja/rk-common/common"
-	"github.com/rookie-ninja/rk-common/error"
+	rkmid "github.com/rookie-ninja/rk-entry/middleware"
+	rkmidcsrf "github.com/rookie-ninja/rk-entry/middleware/csrf"
 	"github.com/rookie-ninja/rk-mux/interceptor"
 	"net/http"
-	"time"
 )
 
 // Interceptor Add csrf interceptors.
 //
 // Mainly copied from bellow.
 // https://github.com/labstack/echo/blob/master/middleware/csrf.go
-func Interceptor(opts ...Option) mux.MiddlewareFunc {
-	set := newOptionSet(opts...)
+func Interceptor(opts ...rkmidcsrf.Option) mux.MiddlewareFunc {
+	set := rkmidcsrf.NewOptionSet(opts...)
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
 			// wrap writer
 			writer = rkmuxinter.WrapResponseWriter(writer)
 
-			ctx := context.WithValue(req.Context(), rkmuxinter.RpcEntryNameKey, set.EntryName)
+			ctx := context.WithValue(req.Context(), rkmid.EntryNameKey, set.GetEntryName())
 			req = req.WithContext(ctx)
 
-			// 1: skip csrf check based on skipper
-			if set.Skipper(req) {
-				next.ServeHTTP(writer, req)
+			beforeCtx := set.BeforeCtx(req)
+			set.Before(beforeCtx)
+
+			if beforeCtx.Output.ErrResp != nil {
+				rkmuxinter.WriteJson(writer, beforeCtx.Output.ErrResp.Err.Code, beforeCtx.Output.ErrResp)
 				return
 			}
 
-			k, err := req.Cookie(set.CookieName)
-			token := ""
-
-			// 2.1: generate token if failed to get cookie from context
-			if err != nil {
-				token = rkcommon.RandString(set.TokenLength)
-			} else {
-				// 2.2: reuse token if exists
-				token = k.Value
+			for _, v := range beforeCtx.Output.VaryHeaders {
+				writer.Header().Add(rkmid.HeaderVary, v)
 			}
 
-			// 3.1: do not check http methods of GET, HEAD, OPTIONS and TRACE
-			switch req.Method {
-			case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace:
-			default:
-				// 3.2: validate token only for requests which are not defined as 'safe' by RFC7231
-				clientToken, err := set.extractor(req)
-				if err != nil {
-					rkmuxinter.WriteJson(writer, http.StatusBadRequest, rkerror.New(
-						rkerror.WithHttpCode(http.StatusBadRequest),
-						rkerror.WithMessage("failed to extract client token"),
-						rkerror.WithDetails(err)))
-
-					return
-				}
-
-				// 3.3: return 403 to client if token is not matched
-				if !isValidToken(token, clientToken) {
-					rkmuxinter.WriteJson(writer, http.StatusForbidden, rkerror.New(
-						rkerror.WithHttpCode(http.StatusForbidden),
-						rkerror.WithMessage("invalid csrf token")))
-					return
-				}
+			if beforeCtx.Output.Cookie != nil {
+				http.SetCookie(writer, beforeCtx.Output.Cookie)
 			}
-
-			// set CSRF cookie
-			cookie := new(http.Cookie)
-			cookie.Name = set.CookieName
-			cookie.Value = token
-			// 4.1
-			if set.CookiePath != "" {
-				cookie.Path = set.CookiePath
-			}
-			// 4.2
-			if set.CookieDomain != "" {
-				cookie.Domain = set.CookieDomain
-			}
-			// 4.3
-			if set.CookieSameSite != http.SameSiteDefaultMode {
-				cookie.SameSite = set.CookieSameSite
-			}
-			cookie.Expires = time.Now().Add(time.Duration(set.CookieMaxAge) * time.Second)
-			cookie.Secure = set.CookieSameSite == http.SameSiteNoneMode
-			cookie.HttpOnly = set.CookieHTTPOnly
-			http.SetCookie(writer, cookie)
 
 			// store token in the context
-			req = req.WithContext(context.WithValue(req.Context(), rkmuxinter.RpcCsrfTokenKey, token))
-
-			// protect clients from caching the response
-			writer.Header().Add(headerVary, headerCookie)
+			ctx = context.WithValue(req.Context(), rkmid.CsrfTokenKey, beforeCtx.Input.Token)
+			req = req.WithContext(ctx)
 
 			next.ServeHTTP(writer, req)
 		})

@@ -6,37 +6,48 @@
 package rkmuxmeta
 
 import (
-	"bytes"
+	rkentry "github.com/rookie-ninja/rk-entry/entry"
+	rkmidmeta "github.com/rookie-ninja/rk-entry/middleware/meta"
 	"github.com/stretchr/testify/assert"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
 
-var userFunc = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+var userHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusOK)
 })
 
+func TestInterceptor(t *testing.T) {
+	defer assertNotPanic(t)
+
+	beforeCtx := rkmidmeta.NewBeforeCtx()
+	mock := rkmidmeta.NewOptionSetMock(beforeCtx)
+
+	inter := Interceptor(rkmidmeta.WithMockOptionSet(mock))
+	req, w := newReqAndWriter()
+
+	beforeCtx.Input.Event = rkentry.NoopEventLoggerEntry().GetEventFactory().CreateEventNoop()
+	beforeCtx.Output.HeadersToReturn["key"] = "value"
+
+	inter(userHandler).ServeHTTP(w, req)
+
+	assert.Equal(t, "value", w.Header().Get("key"))
+}
+
 func newReqAndWriter() (*http.Request, *httptest.ResponseRecorder) {
-	var buf bytes.Buffer
-	req := httptest.NewRequest(http.MethodGet, "/ut-path", &buf)
+	req := httptest.NewRequest(http.MethodGet, "/ut-path", nil)
+	req.Header = http.Header{}
 	writer := httptest.NewRecorder()
 	return req, writer
 }
 
-func TestInterceptor(t *testing.T) {
-	req, writer := newReqAndWriter()
-
-	handler := Interceptor(
-		WithEntryNameAndType("ut-entry", "ut-type"))
-
-	f := handler(userFunc)
-	f.ServeHTTP(writer, req)
-
-	assert.Equal(t, http.StatusOK, writer.Result().StatusCode)
-
-	assert.NotEmpty(t, writer.Header().Get("X-RK-App-Name"))
-	assert.Empty(t, writer.Header().Get("X-RK-App-Version"))
-	assert.NotEmpty(t, writer.Header().Get("X-RK-App-Unix-Time"))
-	assert.NotEmpty(t, writer.Header().Get("X-RK-Received-Time"))
+func assertNotPanic(t *testing.T) {
+	if r := recover(); r != nil {
+		// Expect panic to be called with non nil error
+		assert.True(t, false)
+	} else {
+		// This should never be called in case of a bug
+		assert.True(t, true)
+	}
 }

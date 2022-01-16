@@ -9,40 +9,32 @@ package rkmuxmetrics
 import (
 	"context"
 	"github.com/gorilla/mux"
+	rkmid "github.com/rookie-ninja/rk-entry/middleware"
+	rkmidmetrics "github.com/rookie-ninja/rk-entry/middleware/metrics"
 	"github.com/rookie-ninja/rk-mux/interceptor"
 	"net/http"
-	"time"
+	"strconv"
 )
 
 // Interceptor create a new prometheus metrics interceptor with options.
-func Interceptor(opts ...Option) mux.MiddlewareFunc {
-	set := newOptionSet(opts...)
+func Interceptor(opts ...rkmidmetrics.Option) mux.MiddlewareFunc {
+	set := rkmidmetrics.NewOptionSet(opts...)
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
 			// wrap writer
 			writer = rkmuxinter.WrapResponseWriter(writer)
 
-			req = req.WithContext(context.WithValue(req.Context(), rkmuxinter.RpcEntryNameKey, set.EntryName))
+			ctx := context.WithValue(req.Context(), rkmid.EntryNameKey, set.GetEntryName())
+			req = req.WithContext(ctx)
 
-			// start timer
-			startTime := time.Now()
+			beforeCtx := set.BeforeCtx(req)
+			set.Before(beforeCtx)
 
 			next.ServeHTTP(writer, req)
 
-			// end timer
-			elapsed := time.Now().Sub(startTime)
-
-			// ignoring /rk/v1/assets, /rk/v1/tv and /sw/ path while logging since these are internal APIs.
-			if rkmuxinter.ShouldLog(req) {
-				if durationMetrics := GetServerDurationMetrics(req, writer); durationMetrics != nil {
-					durationMetrics.Observe(float64(elapsed.Nanoseconds()))
-				}
-
-				if resCodeMetrics := GetServerResCodeMetrics(req, writer); resCodeMetrics != nil {
-					resCodeMetrics.Inc()
-				}
-			}
+			afterCtx := set.AfterCtx(strconv.Itoa(writer.(*rkmuxinter.RkResponseWriter).Code))
+			set.After(beforeCtx, afterCtx)
 		})
 	}
 }

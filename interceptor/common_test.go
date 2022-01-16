@@ -8,69 +8,42 @@ package rkmuxinter
 import (
 	"github.com/stretchr/testify/assert"
 	"net/http"
-	"net/url"
+	"net/http/httptest"
 	"testing"
 )
 
-func TestGetRemoteAddressSet(t *testing.T) {
-	// With nil request
-	ip, port := GetRemoteAddressSet(nil)
-	assert.Equal(t, "0.0.0.0", ip)
-	assert.Equal(t, "0", port)
+func TestWrapResponseWriter(t *testing.T) {
+	defer assertNotPanic(t)
 
-	// With x-forwarded-for equals to ::1
-	req := &http.Request{
-		RemoteAddr: "1.1.1.1:1",
-		Header:     http.Header{},
-	}
-	req.Header.Set("x-forwarded-for", "::1")
-	ip, port = GetRemoteAddressSet(req)
+	// with same type
+	rkWriter := &RkResponseWriter{}
+	assert.Equal(t, rkWriter, WrapResponseWriter(rkWriter))
 
-	assert.Equal(t, "localhost", ip)
-	assert.Equal(t, "1", port)
+	// happy case
+	oldW := httptest.NewRecorder()
+	rkWriter = WrapResponseWriter(oldW)
 
-	// Happy case
-	req = &http.Request{
-		RemoteAddr: "1.1.1.1:1",
-		Header:     http.Header{},
-	}
-	ip, port = GetRemoteAddressSet(req)
 
-	assert.Equal(t, "1.1.1.1", ip)
-	assert.Equal(t, "1", port)
+	_, err := rkWriter.Write([]byte{})
+	assert.Nil(t, err)
+
+	rkWriter.WriteHeader(http.StatusOK)
+	assert.Equal(t, http.StatusOK, oldW.Code)
+
+	_, _, err = rkWriter.Hijack()
+	assert.Nil(t, err)
+
+	assert.NotNil(t, rkWriter.Header())
+
+	rkWriter.Flush()
 }
 
-func TestShouldLog(t *testing.T) {
-	// With nil context
-	assert.False(t, ShouldLog(nil))
-
-	// With ignoring path
-	req := &http.Request{
-		URL: &url.URL{
-			Path: "/rk/v1/assets",
-		},
+func assertNotPanic(t *testing.T) {
+	if r := recover(); r != nil {
+		// Expect panic to be called with non nil error
+		assert.True(t, false)
+	} else {
+		// This should never be called in case of a bug
+		assert.True(t, true)
 	}
-	assert.False(t, ShouldLog(req))
-
-	req = &http.Request{
-		URL: &url.URL{
-			Path: "/rk/v1/tv",
-		},
-	}
-	assert.False(t, ShouldLog(req))
-
-	req = &http.Request{
-		URL: &url.URL{
-			Path: "/sw/",
-		},
-	}
-	assert.False(t, ShouldLog(req))
-
-	// Expect true
-	req = &http.Request{
-		URL: &url.URL{
-			Path: "ut-path",
-		},
-	}
-	assert.True(t, ShouldLog(req))
 }

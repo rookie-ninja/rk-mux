@@ -6,102 +6,48 @@
 package rkmuxcsrf
 
 import (
+	rkerror "github.com/rookie-ninja/rk-common/error"
+	rkmid "github.com/rookie-ninja/rk-entry/middleware"
+	rkmidcsrf "github.com/rookie-ninja/rk-entry/middleware/csrf"
 	"github.com/stretchr/testify/assert"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
 
-var userFunc = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+var userHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusOK)
 })
 
 func TestInterceptor(t *testing.T) {
 	defer assertNotPanic(t)
 
-	// match 1
-	req, writer := newReqAndWriter(http.MethodGet)
-	handler := Interceptor(WithSkipper(func(r *http.Request) bool {
-		return true
-	}))
-	f := handler(userFunc)
-	f.ServeHTTP(writer, req)
-	assert.Equal(t, http.StatusOK, writer.Result().StatusCode)
+	beforeCtx := rkmidcsrf.NewBeforeCtx()
+	mock := rkmidcsrf.NewOptionSetMock(beforeCtx)
 
-	// match 2.1
-	req, writer = newReqAndWriter(http.MethodGet)
-	handler = Interceptor()
-	f = handler(userFunc)
-	f.ServeHTTP(writer, req)
-	assert.Equal(t, http.StatusOK, writer.Result().StatusCode)
-	assert.Contains(t, writer.Header().Get("Set-Cookie"), "_csrf")
+	// case 1: with error response
+	inter := Interceptor(rkmidcsrf.WithMockOptionSet(mock))
+	req, w := newReqAndWriter()
 
-	// match 2.2
-	req, writer = newReqAndWriter(http.MethodGet)
-	req.AddCookie(&http.Cookie{
-		Name:  "_csrf",
-		Value: "ut-csrf-token",
-	})
-	handler = Interceptor()
-	f = handler(userFunc)
-	f.ServeHTTP(writer, req)
-	assert.Equal(t, http.StatusOK, writer.Result().StatusCode)
-	assert.Contains(t, writer.Header().Get("Set-Cookie"), "_csrf")
+	// assign any of error response
+	beforeCtx.Output.ErrResp = rkerror.New(rkerror.WithHttpCode(http.StatusForbidden))
+	inter(userHandler).ServeHTTP(w, req)
+	assert.Equal(t, http.StatusForbidden, w.Code)
 
-	// match 3.1
-	req, writer = newReqAndWriter(http.MethodGet)
-	handler = Interceptor()
-	f = handler(userFunc)
-	f.ServeHTTP(writer, req)
-	assert.Equal(t, http.StatusOK, writer.Result().StatusCode)
-
-	// match 3.2
-	req, writer = newReqAndWriter(http.MethodPost)
-	handler = Interceptor()
-	f = handler(userFunc)
-	f.ServeHTTP(writer, req)
-	assert.Equal(t, http.StatusBadRequest, writer.Result().StatusCode)
-
-	// match 3.3
-	req, writer = newReqAndWriter(http.MethodPost)
-	req.Header.Set(headerXCSRFToken, "ut-csrf-token")
-	handler = Interceptor()
-	f = handler(userFunc)
-	f.ServeHTTP(writer, req)
-	assert.Equal(t, http.StatusForbidden, writer.Result().StatusCode)
-
-	// match 4.1
-	req, writer = newReqAndWriter(http.MethodGet)
-	handler = Interceptor(
-		WithCookiePath("ut-path"))
-	f = handler(userFunc)
-	f.ServeHTTP(writer, req)
-	assert.Equal(t, http.StatusOK, writer.Result().StatusCode)
-	assert.Contains(t, writer.Header().Get("Set-Cookie"), "ut-path")
-
-	// match 4.2
-	req, writer = newReqAndWriter(http.MethodGet)
-	handler = Interceptor(
-		WithCookieDomain("ut-domain"))
-	f = handler(userFunc)
-	f.ServeHTTP(writer, req)
-	assert.Equal(t, http.StatusOK, writer.Result().StatusCode)
-	assert.Contains(t, writer.Header().Get("Set-Cookie"), "ut-domain")
-
-	// match 4.3
-	req, writer = newReqAndWriter(http.MethodGet)
-	handler = Interceptor(
-		WithCookieSameSite(http.SameSiteStrictMode))
-	f = handler(userFunc)
-	f.ServeHTTP(writer, req)
-	assert.Equal(t, http.StatusOK, writer.Result().StatusCode)
-	assert.Contains(t, writer.Header().Get("Set-Cookie"), "Strict")
+	// case 2: happy case
+	beforeCtx.Output.ErrResp = nil
+	beforeCtx.Output.VaryHeaders = []string{"value"}
+	beforeCtx.Output.Cookie = &http.Cookie{}
+	req, w = newReqAndWriter()
+	inter(userHandler).ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.NotEmpty(t, w.Header().Get(rkmid.HeaderVary))
+	assert.NotNil(t, w.Header().Get("Set-Cookie"))
 }
 
-func newReqAndWriter(method string) (*http.Request, *httptest.ResponseRecorder) {
-	req := httptest.NewRequest(method, "/ut-path", nil)
+func newReqAndWriter() (*http.Request, *httptest.ResponseRecorder) {
+	req := httptest.NewRequest(http.MethodGet, "/ut-path", nil)
 	req.Header = http.Header{}
-
 	writer := httptest.NewRecorder()
 	return req, writer
 }

@@ -9,88 +9,53 @@ package rkmuxtrace
 import (
 	"context"
 	"github.com/gorilla/mux"
-	"github.com/rookie-ninja/rk-entry/entry"
+	rkmid "github.com/rookie-ninja/rk-entry/middleware"
+	rkmidtrace "github.com/rookie-ninja/rk-entry/middleware/tracing"
 	"github.com/rookie-ninja/rk-mux/interceptor"
 	"github.com/rookie-ninja/rk-mux/interceptor/context"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/propagation"
-	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
-	oteltrace "go.opentelemetry.io/otel/trace"
 	"net/http"
 )
 
 // Interceptor create a interceptor with opentelemetry.
-func Interceptor(opts ...Option) mux.MiddlewareFunc {
-	set := newOptionSet(opts...)
+func Interceptor(opts ...rkmidtrace.Option) mux.MiddlewareFunc {
+	set := rkmidtrace.NewOptionSet(opts...)
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
 			// wrap writer
 			writer = rkmuxinter.WrapResponseWriter(writer)
 
-			req = req.WithContext(context.WithValue(req.Context(), rkmuxinter.RpcEntryNameKey, set.EntryName))
-			req = req.WithContext(context.WithValue(req.Context(), rkmuxinter.RpcTracerKey, set.Tracer))
-			req = req.WithContext(context.WithValue(req.Context(), rkmuxinter.RpcTracerProviderKey, set.Provider))
-			req = req.WithContext(context.WithValue(req.Context(), rkmuxinter.RpcPropagatorKey, set.Propagator))
+			ctx := context.WithValue(req.Context(), rkmid.EntryNameKey, set.GetEntryName())
+			req = req.WithContext(ctx)
 
-			span, newReq := before(req, writer, set)
-			defer span.End()
+			ctx = context.WithValue(req.Context(), rkmid.TracerKey, set.GetTracer())
+			req = req.WithContext(ctx)
 
-			next.ServeHTTP(writer, newReq)
+			ctx = context.WithValue(req.Context(), rkmid.TracerProviderKey, set.GetProvider())
+			req = req.WithContext(ctx)
 
-			after(writer.(*rkmuxinter.RkResponseWriter), span)
+			ctx = context.WithValue(req.Context(), rkmid.PropagatorKey, set.GetPropagator())
+			req = req.WithContext(ctx)
+
+			beforeCtx := set.BeforeCtx(req, false)
+			set.Before(beforeCtx)
+
+			// create request with new context
+			req = req.WithContext(beforeCtx.Output.NewCtx)
+
+			// add to context
+			if beforeCtx.Output.Span != nil {
+				traceId := beforeCtx.Output.Span.SpanContext().TraceID().String()
+				rkmuxctx.GetEvent(req).SetTraceId(traceId)
+				writer.Header().Set(rkmid.HeaderTraceId, traceId)
+				ctx = context.WithValue(req.Context(), rkmid.SpanKey, beforeCtx.Output.Span)
+				req = req.WithContext(ctx)
+			}
+
+			next.ServeHTTP(writer, req)
+
+			afterCtx := set.AfterCtx(writer.(*rkmuxinter.RkResponseWriter).Code, "")
+			set.After(beforeCtx, afterCtx)
 		})
 	}
-}
-
-func before(req *http.Request, writer http.ResponseWriter, set *optionSet) (oteltrace.Span, *http.Request) {
-	opts := []oteltrace.SpanStartOption{
-		oteltrace.WithAttributes(semconv.NetAttributesFromHTTPRequest("tcp", req)...),
-		oteltrace.WithAttributes(semconv.EndUserAttributesFromHTTPRequest(req)...),
-		oteltrace.WithAttributes(semconv.HTTPServerAttributesFromHTTPRequest(rkentry.GlobalAppCtx.GetAppInfoEntry().AppName, req.URL.Path, req)...),
-		oteltrace.WithAttributes(localeToAttributes()...),
-		oteltrace.WithSpanKind(oteltrace.SpanKindServer),
-	}
-
-	// 1: extract tracing info from request header
-	spanCtx := oteltrace.SpanContextFromContext(
-		set.Propagator.Extract(req.Context(), propagation.HeaderCarrier(req.Header)))
-
-	spanName := req.URL.Path
-	if len(spanName) < 1 {
-		spanName = "rk-span-default"
-	}
-
-	// 2: start new span
-	newRequestCtx, span := set.Tracer.Start(
-		oteltrace.ContextWithRemoteSpanContext(req.Context(), spanCtx),
-		spanName, opts...)
-	// 2.1: pass the span through the request context
-	req = req.WithContext(newRequestCtx)
-
-	// 3: read trace id, tracer, traceProvider, propagator and logger into event data and request context
-	rkmuxctx.GetEvent(req).SetTraceId(span.SpanContext().TraceID().String())
-	writer.Header().Set(rkmuxctx.TraceIdKey, span.SpanContext().TraceID().String())
-
-	req = req.WithContext(context.WithValue(req.Context(), rkmuxinter.RpcSpanKey, span))
-	return span, req
-}
-
-func after(writer *rkmuxinter.RkResponseWriter, span oteltrace.Span) {
-	attrs := semconv.HTTPAttributesFromHTTPStatusCode(writer.Code)
-	spanStatus, spanMessage := semconv.SpanStatusFromHTTPStatusCode(writer.Code)
-	span.SetAttributes(attrs...)
-	span.SetStatus(spanStatus, spanMessage)
-}
-
-// Convert locale information into attributes.
-func localeToAttributes() []attribute.KeyValue {
-	res := []attribute.KeyValue{
-		attribute.String(rkmuxinter.Realm.Key, rkmuxinter.Realm.String),
-		attribute.String(rkmuxinter.Region.Key, rkmuxinter.Region.String),
-		attribute.String(rkmuxinter.AZ.Key, rkmuxinter.AZ.String),
-		attribute.String(rkmuxinter.Domain.Key, rkmuxinter.Domain.String),
-	}
-
-	return res
 }

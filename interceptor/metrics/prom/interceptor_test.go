@@ -6,28 +6,39 @@
 package rkmuxmetrics
 
 import (
-	"github.com/prometheus/client_golang/prometheus"
+	rkmidmetrics "github.com/rookie-ninja/rk-entry/middleware/metrics"
 	"github.com/stretchr/testify/assert"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 )
+
+var userHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	w.WriteHeader(http.StatusOK)
+})
 
 func TestInterceptor(t *testing.T) {
 	defer assertNotPanic(t)
 
-	handler := Interceptor(
-		WithEntryNameAndType("ut-entry", "ut-type"),
-		WithRegisterer(prometheus.NewRegistry()))
+	beforeCtx := rkmidmetrics.NewBeforeCtx()
+	afterCtx := rkmidmetrics.NewAfterCtx()
+	mock := rkmidmetrics.NewOptionSetMock(beforeCtx, afterCtx)
+	inter := Interceptor(rkmidmetrics.WithMockOptionSet(mock))
 
-	// With ignoring case
-	req, writer := newReqAndWriter()
-	req.URL.Path = "/rk/v1/assets"
+	req, w := newReqAndWriter()
 
-	// Happy case
-	f := handler(userFunc)
-	f.ServeHTTP(writer, req)
+	inter(userHandler).ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusOK, writer.Result().StatusCode)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	rkmidmetrics.ClearAllMetrics()
+}
+
+func newReqAndWriter() (*http.Request, *httptest.ResponseRecorder) {
+	req := httptest.NewRequest(http.MethodGet, "/ut-path", nil)
+	req.Header = http.Header{}
+	writer := httptest.NewRecorder()
+	return req, writer
 }
 
 func assertNotPanic(t *testing.T) {

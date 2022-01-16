@@ -7,8 +7,8 @@ package rkmuxctx
 
 import (
 	"context"
+	rkmid "github.com/rookie-ninja/rk-entry/middleware"
 	"github.com/rookie-ninja/rk-logger"
-	"github.com/rookie-ninja/rk-mux/interceptor"
 	"github.com/rookie-ninja/rk-query"
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/otel/propagation"
@@ -65,7 +65,7 @@ func TestGetEvent(t *testing.T) {
 
 	// Happy case
 	event := rkquery.NewEventFactory().CreateEventNoop()
-	req = req.WithContext(context.WithValue(req.Context(), rkmuxinter.RpcEventKey, event))
+	req = req.WithContext(context.WithValue(req.Context(), rkmid.EventKey, event))
 	assert.Equal(t, event, GetEvent(req))
 }
 
@@ -77,10 +77,10 @@ func TestGetLogger(t *testing.T) {
 
 	// Happy case
 	// Add request id and trace id
-	writer.Header().Set(RequestIdKey, "ut-request-id")
-	writer.Header().Set(TraceIdKey, "ut-trace-id")
+	writer.Header().Set(rkmid.HeaderRequestId, "ut-request-id")
+	writer.Header().Set(rkmid.HeaderTraceId, "ut-trace-id")
 
-	req = req.WithContext(context.WithValue(req.Context(), rkmuxinter.RpcLoggerKey, rklogger.NoopLogger))
+	req = req.WithContext(context.WithValue(req.Context(), rkmid.LoggerKey, rklogger.NoopLogger))
 
 	assert.Equal(t, rklogger.NoopLogger, GetLogger(req, writer))
 }
@@ -92,7 +92,7 @@ func TestGetRequestId(t *testing.T) {
 	assert.Empty(t, GetRequestId(writer))
 
 	// Happy case
-	writer.Header().Set(RequestIdKey, "ut-request-id")
+	writer.Header().Set(rkmid.HeaderRequestId, "ut-request-id")
 	assert.Equal(t, "ut-request-id", GetRequestId(writer))
 }
 
@@ -103,7 +103,7 @@ func TestGetTraceId(t *testing.T) {
 	assert.Empty(t, GetTraceId(writer))
 
 	// Happy case
-	writer.Header().Set(TraceIdKey, "ut-trace-id")
+	writer.Header().Set(rkmid.HeaderTraceId, "ut-trace-id")
 	assert.Equal(t, "ut-trace-id", GetTraceId(writer))
 }
 
@@ -114,7 +114,7 @@ func TestGetEntryName(t *testing.T) {
 	assert.Empty(t, GetEntryName(req))
 
 	// Happy case
-	req = req.WithContext(context.WithValue(req.Context(), rkmuxinter.RpcEntryNameKey, "ut-entry-name"))
+	req = req.WithContext(context.WithValue(req.Context(), rkmid.EntryNameKey, "ut-entry-name"))
 	assert.Equal(t, "ut-entry-name", GetEntryName(req))
 }
 
@@ -126,7 +126,7 @@ func TestGetTraceSpan(t *testing.T) {
 
 	// Happy case
 	_, span := noopTracerProvider.Tracer("ut-trace").Start(req.Context(), "noop-span")
-	req = req.WithContext(context.WithValue(req.Context(), rkmuxinter.RpcSpanKey, span))
+	req = req.WithContext(context.WithValue(req.Context(), rkmid.SpanKey, span))
 	assert.Equal(t, span, GetTraceSpan(req))
 }
 
@@ -138,7 +138,7 @@ func TestGetTracer(t *testing.T) {
 
 	// Happy case
 	tracer := noopTracerProvider.Tracer("ut-trace")
-	req = req.WithContext(context.WithValue(req.Context(), rkmuxinter.RpcTracerKey, tracer))
+	req = req.WithContext(context.WithValue(req.Context(), rkmid.TracerKey, tracer))
 	assert.Equal(t, tracer, GetTracer(req))
 }
 
@@ -150,7 +150,7 @@ func TestGetTracerProvider(t *testing.T) {
 
 	// Happy case
 	provider := trace.NewNoopTracerProvider()
-	req = req.WithContext(context.WithValue(req.Context(), rkmuxinter.RpcTracerProviderKey, provider))
+	req = req.WithContext(context.WithValue(req.Context(), rkmid.TracerProviderKey, provider))
 	assert.Equal(t, provider, GetTracerProvider(req))
 }
 
@@ -162,7 +162,7 @@ func TestGetTracerPropagator(t *testing.T) {
 
 	// Happy case
 	prop := propagation.NewCompositeTextMapPropagator()
-	req = req.WithContext(context.WithValue(req.Context(), rkmuxinter.RpcPropagatorKey, prop))
+	req = req.WithContext(context.WithValue(req.Context(), rkmid.PropagatorKey, prop))
 	assert.Equal(t, prop, GetTracerPropagator(req))
 }
 
@@ -173,7 +173,7 @@ func TestInjectSpanToHttpRequest(t *testing.T) {
 	req, _ := newReqAndWriter()
 
 	prop := propagation.NewCompositeTextMapPropagator()
-	req = req.WithContext(context.WithValue(req.Context(), rkmuxinter.RpcPropagatorKey, prop))
+	req = req.WithContext(context.WithValue(req.Context(), rkmid.PropagatorKey, prop))
 
 	InjectSpanToHttpRequest(req, &http.Request{
 		Header: http.Header{},

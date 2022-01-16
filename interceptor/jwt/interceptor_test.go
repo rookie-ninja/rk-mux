@@ -6,60 +6,43 @@
 package rkmuxjwt
 
 import (
-	"errors"
-	"github.com/golang-jwt/jwt/v4"
+	rkerror "github.com/rookie-ninja/rk-common/error"
+	rkmidjwt "github.com/rookie-ninja/rk-entry/middleware/jwt"
 	"github.com/stretchr/testify/assert"
 	"net/http"
-	"strings"
+	"net/http/httptest"
 	"testing"
 )
 
-var userFunc = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+var userHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusOK)
 })
 
 func TestInterceptor(t *testing.T) {
 	defer assertNotPanic(t)
 
-	// with skipper
-	req, writer := newReqAndWriter()
-	handler := Interceptor(WithSkipper(func(*http.Request) bool {
-		return true
-	}))
-	f := handler(userFunc)
-	f.ServeHTTP(writer, req)
-	assert.Equal(t, http.StatusOK, writer.Result().StatusCode)
+	beforeCtx := rkmidjwt.NewBeforeCtx()
+	mock := rkmidjwt.NewOptionSetMock(beforeCtx)
+	inter := Interceptor(rkmidjwt.WithMockOptionSet(mock))
 
-	// without options
-	req, writer = newReqAndWriter()
-	handler = Interceptor()
-	f = handler(userFunc)
-	f.ServeHTTP(writer, req)
-	assert.Equal(t, http.StatusUnauthorized, writer.Result().StatusCode)
+	// case 1: error response
+	beforeCtx.Output.ErrResp = rkerror.New(rkerror.WithHttpCode(http.StatusUnauthorized))
+	req, w := newReqAndWriter()
+	inter(userHandler).ServeHTTP(w, req)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
 
-	// with parse token error
-	parseTokenErrFunc := func(auth string, req *http.Request) (*jwt.Token, error) {
-		return nil, errors.New("ut-error")
-	}
-	req, writer = newReqAndWriter()
-	req.Header.Set(headerAuthorization, strings.Join([]string{"Bearer", "ut-auth"}, " "))
-	handler = Interceptor(
-		WithParseTokenFunc(parseTokenErrFunc))
-	f = handler(userFunc)
-	f.ServeHTTP(writer, req)
-	assert.Equal(t, http.StatusUnauthorized, writer.Result().StatusCode)
+	// case 2: happy case
+	beforeCtx.Output.ErrResp = nil
+	req, w = newReqAndWriter()
+	inter(userHandler).ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
 
-	// happy case
-	parseTokenErrFunc = func(auth string, req *http.Request) (*jwt.Token, error) {
-		return &jwt.Token{}, nil
-	}
-	req, writer = newReqAndWriter()
-	req.Header.Set(headerAuthorization, strings.Join([]string{"Bearer", "ut-auth"}, " "))
-	handler = Interceptor(
-		WithParseTokenFunc(parseTokenErrFunc))
-	f = handler(userFunc)
-	f.ServeHTTP(writer, req)
-	assert.Equal(t, http.StatusOK, writer.Result().StatusCode)
+func newReqAndWriter() (*http.Request, *httptest.ResponseRecorder) {
+	req := httptest.NewRequest(http.MethodGet, "/ut-path", nil)
+	req.Header = http.Header{}
+	writer := httptest.NewRecorder()
+	return req, writer
 }
 
 func assertNotPanic(t *testing.T) {

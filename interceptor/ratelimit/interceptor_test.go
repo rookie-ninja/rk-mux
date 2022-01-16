@@ -6,75 +6,53 @@
 package rkmuxlimit
 
 import (
-	"fmt"
+	rkerror "github.com/rookie-ninja/rk-common/error"
+	rkmidlimit "github.com/rookie-ninja/rk-entry/middleware/ratelimit"
 	"github.com/stretchr/testify/assert"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
-func TestInterceptor_WithoutOptions(t *testing.T) {
+var userHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	w.WriteHeader(http.StatusOK)
+})
+
+
+func TestInterceptor(t *testing.T) {
 	defer assertNotPanic(t)
 
-	handler := Interceptor()
+	beforeCtx := rkmidlimit.NewBeforeCtx()
+	mock := rkmidlimit.NewOptionSetMock(beforeCtx)
 
-	req, writer := newReqAndWriter()
-	req.URL.Path = "/ut-path"
-	f := handler(userFunc)
-	f.ServeHTTP(writer, req)
+	// case 1: with error response
+	inter := Interceptor(rkmidlimit.WithMockOptionSet(mock))
+	req, w := newReqAndWriter()
+	// assign any of error response
+	beforeCtx.Output.ErrResp = rkerror.New(rkerror.WithHttpCode(http.StatusTooManyRequests))
+	inter(userHandler).ServeHTTP(w, req)
+	assert.Equal(t, http.StatusTooManyRequests, w.Code)
 
-	assert.Equal(t, http.StatusOK, writer.Result().StatusCode)
+	// case 2: happy case
+	req, w = newReqAndWriter()
+	beforeCtx.Output.ErrResp = nil
+	inter(userHandler).ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
 }
 
-func TestInterceptor_WithTokenBucket(t *testing.T) {
-	defer assertNotPanic(t)
-
-	handler := Interceptor(
-		WithAlgorithm(TokenBucket),
-		WithReqPerSec(1),
-		WithReqPerSecByPath("ut-path", 1))
-
-	req, writer := newReqAndWriter()
-	req.URL.Path = "/ut-path"
-
-	f := handler(userFunc)
-	f.ServeHTTP(writer, req)
-
-	assert.Equal(t, http.StatusOK, writer.Result().StatusCode)
+func newReqAndWriter() (*http.Request, *httptest.ResponseRecorder) {
+	req := httptest.NewRequest(http.MethodGet, "/ut-path", nil)
+	req.Header = http.Header{}
+	writer := httptest.NewRecorder()
+	return req, writer
 }
 
-func TestInterceptor_WithLeakyBucket(t *testing.T) {
-	defer assertNotPanic(t)
-
-	handler := Interceptor(
-		WithAlgorithm(LeakyBucket),
-		WithReqPerSec(1),
-		WithReqPerSecByPath("ut-path", 1))
-
-	req, writer := newReqAndWriter()
-	req.URL.Path = "/ut-path"
-
-	f := handler(userFunc)
-	f.ServeHTTP(writer, req)
-
-	assert.Equal(t, http.StatusOK, writer.Result().StatusCode)
-}
-
-func TestInterceptor_WithUserLimiter(t *testing.T) {
-	defer assertNotPanic(t)
-
-	handler := Interceptor(
-		WithGlobalLimiter(func(*http.Request) error {
-			return fmt.Errorf("ut-error")
-		}),
-		WithLimiterByPath("/ut-path", func(*http.Request) error {
-			return fmt.Errorf("ut-error")
-		}))
-
-	req, writer := newReqAndWriter()
-	req.URL.Path = "/ut-path"
-
-	f := handler(userFunc)
-	f.ServeHTTP(writer, req)
-
-	assert.Equal(t, http.StatusTooManyRequests, writer.Result().StatusCode)
+func assertNotPanic(t *testing.T) {
+	if r := recover(); r != nil {
+		// Expect panic to be called with non nil error
+		assert.True(t, false)
+	} else {
+		// This should never be called in case of a bug
+		assert.True(t, true)
+	}
 }

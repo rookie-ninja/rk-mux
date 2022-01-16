@@ -6,8 +6,8 @@
 package rkmuxauth
 
 import (
-	"fmt"
-	"github.com/rookie-ninja/rk-mux/interceptor"
+	rkerror "github.com/rookie-ninja/rk-common/error"
+	rkmidauth "github.com/rookie-ninja/rk-entry/middleware/auth"
 	"github.com/stretchr/testify/assert"
 	"net/http"
 	"net/http/httptest"
@@ -18,100 +18,26 @@ var userFunc = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusOK)
 })
 
-func TestInterceptor_WithIgnoringPath(t *testing.T) {
+func TestInterceptor(t *testing.T) {
+	beforeCtx := rkmidauth.NewBeforeCtx()
+	mock := rkmidauth.NewOptionSetMock(beforeCtx)
+
+	// case 1: with error response
+	inter := Interceptor(rkmidauth.WithMockOptionSet(mock))
 	req := httptest.NewRequest(http.MethodGet, "/ut-ignore-path", nil)
 	w := httptest.NewRecorder()
 
-	handler := Interceptor(
-		WithEntryNameAndType("ut-entry", "ut-type"),
-		WithBasicAuth("ut-realm", "user:pass"),
-		WithApiKeyAuth("ut-api-key"),
-		WithIgnorePrefix("/ut-ignore-path"))
+	// assign any of error response
+	beforeCtx.Output.ErrResp = rkerror.New(rkerror.WithHttpCode(http.StatusUnauthorized))
+	beforeCtx.Output.HeadersToReturn["key"] = "value"
+	inter(userFunc).ServeHTTP(w, req)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.Equal(t, "value", w.Header().Get("key"))
 
-	f := handler(userFunc)
-	f.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Result().StatusCode)
-}
-
-func TestInterceptor_WithBasicAuth_Invalid(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/ut-path", nil)
-	w := httptest.NewRecorder()
-
-	handler := Interceptor(
-		WithEntryNameAndType("ut-entry", "ut-type"),
-		WithBasicAuth("ut-realm", "user:pass"))
-
-	// set invalid auth header
-	req.Header.Set(rkmuxinter.RpcAuthorizationHeaderKey, "invalid")
-
-	f := handler(userFunc)
-	f.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusUnauthorized, w.Result().StatusCode)
-}
-
-func TestInterceptor_WithBasicAuth_InvalidBasicAuth(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/ut-path", nil)
-	w := httptest.NewRecorder()
-
-	handler := Interceptor(
-		WithEntryNameAndType("ut-entry", "ut-type"),
-		WithBasicAuth("ut-realm", "user:pass"))
-
-	// set invalid auth header
-	req.Header.Set(rkmuxinter.RpcAuthorizationHeaderKey, fmt.Sprintf("%s invalid", typeBasic))
-
-	f := handler(userFunc)
-	f.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusUnauthorized, w.Result().StatusCode)
-}
-
-func TestInterceptor_WithApiKey_Invalid(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/ut-path", nil)
-	w := httptest.NewRecorder()
-
-	handler := Interceptor(
-		WithEntryNameAndType("ut-entry", "ut-type"),
-		WithApiKeyAuth("ut-api-key"))
-
-	// set invalid auth header
-	req.Header.Set(rkmuxinter.RpcApiKeyHeaderKey, "invalid")
-
-	f := handler(userFunc)
-	f.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusUnauthorized, w.Result().StatusCode)
-}
-
-func TestInterceptor_MissingAuth(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/ut-path", nil)
-	w := httptest.NewRecorder()
-
-	handler := Interceptor(
-		WithEntryNameAndType("ut-entry", "ut-type"),
-		WithApiKeyAuth("ut-api-key"))
-
-	f := handler(userFunc)
-	f.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusUnauthorized, w.Result().StatusCode)
-}
-
-func TestInterceptor_HappyCase(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/ut-ignore-path", nil)
-	w := httptest.NewRecorder()
-
-	handler := Interceptor(
-		WithEntryNameAndType("ut-entry", "ut-type"),
-		//WithBasicAuth("ut-realm", "user:pass"),
-		WithApiKeyAuth("ut-api-key"))
-
-	req.Header.Set(rkmuxinter.RpcApiKeyHeaderKey, "ut-api-key")
-
-	f := handler(userFunc)
-	f.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Result().StatusCode)
+	// case 2: happy case
+	beforeCtx.Output.ErrResp = nil
+	req = httptest.NewRequest(http.MethodGet, "/ut-ignore-path", nil)
+	w = httptest.NewRecorder()
+	inter(userFunc).ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
 }
