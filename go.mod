@@ -7,7 +7,7 @@ require (
 	github.com/gorilla/mux v1.8.0
 	github.com/prometheus/client_golang v1.10.0
 	github.com/rookie-ninja/rk-common v1.2.3
-	github.com/rookie-ninja/rk-entry v1.0.5-0.20220115151807-5a8f2f3818c2
+	github.com/rookie-ninja/rk-entry v1.0.5
 	github.com/rookie-ninja/rk-logger v1.2.3
 	github.com/rookie-ninja/rk-query v1.2.4
 	github.com/streadway/handy v0.0.0-20190108123426-d5acb3125c2a
