@@ -50,7 +50,6 @@ func TestInterceptor(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
-
 func newReqAndWriter() (*http.Request, *httptest.ResponseRecorder) {
 	req := httptest.NewRequest(http.MethodGet, "/ut-path", nil)
 	req.Header = http.Header{}

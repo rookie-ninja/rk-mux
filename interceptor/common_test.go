@@ -23,7 +23,6 @@ func TestWrapResponseWriter(t *testing.T) {
 	oldW := httptest.NewRecorder()
 	rkWriter = WrapResponseWriter(oldW)
 
-
 	_, err := rkWriter.Write([]byte{})
 	assert.Nil(t, err)
 

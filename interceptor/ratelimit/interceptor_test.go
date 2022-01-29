@@ -18,7 +18,6 @@ var userHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request
 	w.WriteHeader(http.StatusOK)
 })
 
-
 func TestInterceptor(t *testing.T) {
 	defer assertNotPanic(t)
 

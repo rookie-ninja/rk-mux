@@ -53,7 +53,7 @@ import (
 
 const (
 	// MuxEntryType type of entry
-	MuxEntryType = "MuxEntry"
+	MuxEntryType = "Mux"
 	// MuxEntryDescription description of entry
 	MuxEntryDescription = "Internal RK entry which helps to bootstrap with mux framework."
 )
@@ -64,49 +64,14 @@ func init() {
 	rkentry.RegisterEntryRegFunc(RegisterMuxEntriesWithConfig)
 }
 
-// BootConfigMux boot config which is for Mux entry.
-//
-// 1: Mux.Enabled: Enable Mux entry, default is true.
-// 2: Mux.Name: Name of Mux entry, should be unique globally.
-// 3: Mux.Port: Port of Mux entry.
-// 4: Mux.Cert.Ref: Reference of rkentry.CertEntry.
-// 5: Mux.SW: See BootConfigSW for details.
-// 6: Mux.CommonService: See BootConfigCommonService for details.
-// 7: Mux.TV: See BootConfigTv for details.
-// 8: Mux.Prom: See BootConfigProm for details.
-// 9: Mux.Interceptors.LoggingZap.Enabled: Enable zap logging interceptor.
-// 10: Mux.Interceptors.MetricsProm.Enable: Enable prometheus interceptor.
-// 11: Mux.Interceptors.auth.Enabled: Enable basic auth.
-// 12: Mux.Interceptors.auth.Basic: Credential for basic auth, scheme: <user:pass>
-// 13: Mux.Interceptors.auth.ApiKey: Credential for X-API-Key.
-// 14: Mux.Interceptors.auth.igorePrefix: List of paths that will be ignored.
-// 15: Mux.Interceptors.Extension.Enabled: Enable extension interceptor.
-// 16: Mux.Interceptors.Extension.Prefix: Prefix of extension header key.
-// 17: Mux.Interceptors.TracingTelemetry.Enabled: Enable tracing interceptor with opentelemetry.
-// 18: Mux.Interceptors.TracingTelemetry.Exporter.File.Enabled: Enable file exporter which support type of stdout and local file.
-// 19: Mux.Interceptors.TracingTelemetry.Exporter.File.OutputPath: Output path of file exporter, stdout and file path is supported.
-// 20: Mux.Interceptors.TracingTelemetry.Exporter.Jaeger.Enabled: Enable jaeger exporter.
-// 21: Mux.Interceptors.TracingTelemetry.Exporter.Jaeger.AgentEndpoint: Specify jeager agent endpoint, localhost:6832 would be used by default.
-// 22: Mux.Interceptors.RateLimit.Enabled: Enable rate limit interceptor.
-// 23: Mux.Interceptors.RateLimit.Algorithm: Algorithm of rate limiter.
-// 24: Mux.Interceptors.RateLimit.ReqPerSec: Request per second.
-// 25: Mux.Interceptors.RateLimit.Paths.path: Name of full path.
-// 26: Mux.Interceptors.RateLimit.Paths.ReqPerSec: Request per second by path.
-// 27: Mux.Interceptors.Timeout.Enabled: Enable timeout interceptor.
-// 28: Mux.Interceptors.Timeout.TimeoutMs: Timeout in milliseconds.
-// 29: Mux.Interceptors.Timeout.Paths.path: Name of full path.
-// 30: Mux.Interceptors.Timeout.Paths.TimeoutMs: Timeout in milliseconds by path.
-// 31: Mux.Logger.ZapLogger.Ref: Zap logger reference, see rkentry.ZapLoggerEntry for details.
-// 32: Mux.Logger.EventLogger.Ref: Event logger reference, see rkentry.EventLoggerEntry for details.
+// BootConfig boot config which is for Mux entry.
 type BootConfig struct {
 	Mux []struct {
-		Enabled     bool   `yaml:"enabled" json:"enabled"`
-		Name        string `yaml:"name" json:"name"`
-		Port        uint64 `yaml:"port" json:"port"`
-		Description string `yaml:"description" json:"description"`
-		Cert        struct {
-			Ref string `yaml:"ref" json:"ref"`
-		} `yaml:"cert" json:"cert"`
+		Enabled       bool                            `yaml:"enabled" json:"enabled"`
+		Name          string                          `yaml:"name" json:"name"`
+		Port          uint64                          `yaml:"port" json:"port"`
+		Description   string                          `yaml:"description" json:"description"`
+		CertEntry     string                          `yaml:"certEntry" json:"certEntry"`
 		SW            rkentry.BootConfigSw            `yaml:"sw" json:"sw"`
 		CommonService rkentry.BootConfigCommonService `yaml:"commonService" json:"commonService"`
 		TV            rkentry.BootConfigTv            `yaml:"tv" json:"tv"`
@@ -125,12 +90,8 @@ type BootConfig struct {
 			TracingTelemetry rkmidtrace.BootConfig   `yaml:"tracingTelemetry" json:"tracingTelemetry"`
 		} `yaml:"interceptors" json:"interceptors"`
 		Logger struct {
-			ZapLogger struct {
-				Ref string `yaml:"ref" json:"ref"`
-			} `yaml:"zapLogger" json:"zapLogger"`
-			EventLogger struct {
-				Ref string `yaml:"ref" json:"ref"`
-			} `yaml:"eventLogger" json:"eventLogger"`
+			ZapLogger   string `yaml:"zapLogger" json:"zapLogger"`
+			EventLogger string `yaml:"eventLogger" json:"eventLogger"`
 		} `yaml:"logger" json:"logger"`
 	} `yaml:"mux" json:"mux"`
 }
@@ -189,12 +150,12 @@ func RegisterMuxEntriesWithConfig(configFilePath string) map[string]rkentry.Entr
 
 		name := element.Name
 
-		zapLoggerEntry := rkentry.GlobalAppCtx.GetZapLoggerEntry(element.Logger.ZapLogger.Ref)
+		zapLoggerEntry := rkentry.GlobalAppCtx.GetZapLoggerEntry(element.Logger.ZapLogger)
 		if zapLoggerEntry == nil {
 			zapLoggerEntry = rkentry.GlobalAppCtx.GetZapLoggerEntryDefault()
 		}
 
-		eventLoggerEntry := rkentry.GlobalAppCtx.GetEventLoggerEntry(element.Logger.EventLogger.Ref)
+		eventLoggerEntry := rkentry.GlobalAppCtx.GetEventLoggerEntry(element.Logger.EventLogger)
 		if eventLoggerEntry == nil {
 			eventLoggerEntry = rkentry.GlobalAppCtx.GetEventLoggerEntryDefault()
 		}
@@ -284,7 +245,7 @@ func RegisterMuxEntriesWithConfig(configFilePath string) map[string]rkentry.Entr
 				rkmidlimit.ToOptions(&element.Interceptors.RateLimit, element.Name, MuxEntryType)...))
 		}
 
-		certEntry := rkentry.GlobalAppCtx.GetCertEntry(element.Cert.Ref)
+		certEntry := rkentry.GlobalAppCtx.GetCertEntry(element.CertEntry)
 
 		entry := RegisterMuxEntry(
 			WithName(name),
@@ -334,6 +295,10 @@ func RegisterMuxEntry(opts ...MuxEntryOption) *MuxEntry {
 	if entry.Router == nil {
 		entry.Router = mux.NewRouter()
 	}
+
+	// add entry name and entry type into loki syncer if enabled
+	entry.ZapLoggerEntry.AddEntryLabelToLokiSyncer(entry)
+	entry.EventLoggerEntry.AddEntryLabelToLokiSyncer(entry)
 
 	// Init TLS config
 	if entry.IsTlsEnabled() {

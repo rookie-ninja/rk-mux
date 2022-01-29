@@ -30,7 +30,6 @@ func Interceptor(opts ...rkmidsec.Option) mux.MiddlewareFunc {
 			ctx := context.WithValue(req.Context(), rkmid.EntryNameKey, set.GetEntryName())
 			req = req.WithContext(ctx)
 
-
 			// case 1: return to user if error occur
 			beforeCtx := set.BeforeCtx(req)
 			set.Before(beforeCtx)
