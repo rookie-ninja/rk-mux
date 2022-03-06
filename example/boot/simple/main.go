@@ -6,22 +6,46 @@ package main
 
 import (
 	"context"
+	"embed"
+	_ "embed"
 	"fmt"
-	"github.com/rookie-ninja/rk-entry/entry"
+	"github.com/rookie-ninja/rk-entry/v2/entry"
 	"github.com/rookie-ninja/rk-mux/boot"
-	"github.com/rookie-ninja/rk-mux/interceptor"
+	"github.com/rookie-ninja/rk-mux/middleware"
 	"net/http"
 )
+
+// How to use embed.FS for:
+//
+// - boot.yaml
+// - rkentry.DocsEntryType
+// - rkentry.SWEntryType
+// - rkentry.StaticFileHandlerEntryType
+// - rkentry.CertEntry
+//
+// If we use embed.FS, then we only need one single binary file while packing.
+// We suggest use embed.FS to pack swagger local file since rk-entry would use os.Getwd() to look for files
+// if relative path was provided.
+//
+//go:embed docs
+var docsFS embed.FS
+
+func init() {
+	rkentry.GlobalAppCtx.AddEmbedFS(rkentry.SWEntryType, "greeter", &docsFS)
+}
+
+//go:embed boot.yaml
+var boot []byte
 
 // @title RK Swagger for Mux
 // @version 1.0
 // @description This is a greeter service with rk-boot.
 func main() {
-	// Bootstrap basic entries from boot config.
-	rkentry.RegisterInternalEntriesFromConfig("example/boot/simple/boot.yaml")
+	// Bootstrap preload entries
+	rkentry.BootstrapPreloadEntryYAML(boot)
 
-	// Bootstrap mux entry from boot config
-	res := rkmux.RegisterMuxEntriesWithConfig("example/boot/simple/boot.yaml")
+	// Bootstrap gin entry from boot config
+	res := rkmux.RegisterMuxEntryYAML(boot)
 
 	// Get MuxEntry
 	muxEntry := res["greeter"].(*rkmux.MuxEntry)
@@ -38,6 +62,7 @@ func main() {
 	muxEntry.Interrupt(context.Background())
 }
 
+// Greeter handler
 // @Summary Greeter service
 // @Id 1
 // @version 1.0
@@ -46,7 +71,7 @@ func main() {
 // @Success 200 {object} GreeterResponse
 // @Router /v1/greeter [get]
 func Greeter(writer http.ResponseWriter, req *http.Request) {
-	rkmuxinter.WriteJson(writer, http.StatusOK, &GreeterResponse{
+	rkmuxmid.WriteJson(writer, http.StatusOK, &GreeterResponse{
 		Message: fmt.Sprintf("Hello %s!", req.URL.Query().Get("name")),
 	})
 }

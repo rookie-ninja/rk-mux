@@ -6,20 +6,24 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
-	"github.com/rookie-ninja/rk-entry/entry"
+	"github.com/rookie-ninja/rk-entry/v2/entry"
 	"github.com/rookie-ninja/rk-mux/boot"
-	"github.com/rookie-ninja/rk-mux/interceptor"
-	"github.com/rookie-ninja/rk-mux/interceptor/context"
+	rkmuxmid "github.com/rookie-ninja/rk-mux/middleware"
+	"github.com/rookie-ninja/rk-mux/middleware/context"
 	"net/http"
 )
 
-func main() {
-	// Bootstrap basic entries from boot config.
-	rkentry.RegisterInternalEntriesFromConfig("example/boot/csrf/boot.yaml")
+//go:embed boot.yaml
+var boot []byte
 
-	// Bootstrap echo entry from boot config
-	res := rkmux.RegisterMuxEntriesWithConfig("example/boot/csrf/boot.yaml")
+func main() {
+	// Bootstrap preload entries
+	rkentry.BootstrapPreloadEntryYAML(boot)
+
+	// Bootstrap gin entry from boot config
+	res := rkmux.RegisterMuxEntryYAML(boot)
 
 	// Register GET and POST method of /rk/v1/greeter
 	entry := res["greeter"].(*rkmux.MuxEntry)
@@ -47,7 +51,7 @@ func Greeter(writer http.ResponseWriter, req *http.Request) {
 	// ******************************************
 	rkmuxctx.GetLogger(req, writer).Info("Received request from client.")
 
-	rkmuxinter.WriteJson(writer, http.StatusOK, &GreeterResponse{
+	rkmuxmid.WriteJson(writer, http.StatusOK, &GreeterResponse{
 		Message: fmt.Sprintf("CSRF token:%v", rkmuxctx.GetCsrfToken(req)),
 	})
 }

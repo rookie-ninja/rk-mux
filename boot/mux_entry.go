@@ -14,109 +14,103 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/rookie-ninja/rk-common/common"
-	"github.com/rookie-ninja/rk-entry/entry"
-	"github.com/rookie-ninja/rk-entry/middleware/auth"
-	"github.com/rookie-ninja/rk-entry/middleware/cors"
-	"github.com/rookie-ninja/rk-entry/middleware/csrf"
-	"github.com/rookie-ninja/rk-entry/middleware/jwt"
-	"github.com/rookie-ninja/rk-entry/middleware/log"
-	"github.com/rookie-ninja/rk-entry/middleware/meta"
-	"github.com/rookie-ninja/rk-entry/middleware/metrics"
-	"github.com/rookie-ninja/rk-entry/middleware/panic"
-	"github.com/rookie-ninja/rk-entry/middleware/ratelimit"
-	"github.com/rookie-ninja/rk-entry/middleware/secure"
-	"github.com/rookie-ninja/rk-entry/middleware/tracing"
-	"github.com/rookie-ninja/rk-mux/interceptor"
-	"github.com/rookie-ninja/rk-mux/interceptor/auth"
-	"github.com/rookie-ninja/rk-mux/interceptor/context"
-	"github.com/rookie-ninja/rk-mux/interceptor/cors"
-	"github.com/rookie-ninja/rk-mux/interceptor/csrf"
-	"github.com/rookie-ninja/rk-mux/interceptor/jwt"
-	"github.com/rookie-ninja/rk-mux/interceptor/log/zap"
-	"github.com/rookie-ninja/rk-mux/interceptor/meta"
-	"github.com/rookie-ninja/rk-mux/interceptor/metrics/prom"
-	"github.com/rookie-ninja/rk-mux/interceptor/panic"
-	"github.com/rookie-ninja/rk-mux/interceptor/ratelimit"
-	"github.com/rookie-ninja/rk-mux/interceptor/secure"
-	"github.com/rookie-ninja/rk-mux/interceptor/tracing/telemetry"
+	"github.com/rookie-ninja/rk-entry/v2/entry"
+	"github.com/rookie-ninja/rk-entry/v2/middleware"
+	"github.com/rookie-ninja/rk-entry/v2/middleware/auth"
+	"github.com/rookie-ninja/rk-entry/v2/middleware/cors"
+	"github.com/rookie-ninja/rk-entry/v2/middleware/csrf"
+	"github.com/rookie-ninja/rk-entry/v2/middleware/jwt"
+	"github.com/rookie-ninja/rk-entry/v2/middleware/log"
+	"github.com/rookie-ninja/rk-entry/v2/middleware/meta"
+	"github.com/rookie-ninja/rk-entry/v2/middleware/panic"
+	"github.com/rookie-ninja/rk-entry/v2/middleware/prom"
+	"github.com/rookie-ninja/rk-entry/v2/middleware/ratelimit"
+	"github.com/rookie-ninja/rk-entry/v2/middleware/secure"
+	"github.com/rookie-ninja/rk-entry/v2/middleware/tracing"
+	"github.com/rookie-ninja/rk-mux/middleware/auth"
+	"github.com/rookie-ninja/rk-mux/middleware/cors"
+	"github.com/rookie-ninja/rk-mux/middleware/csrf"
+	"github.com/rookie-ninja/rk-mux/middleware/jwt"
+	"github.com/rookie-ninja/rk-mux/middleware/log"
+	"github.com/rookie-ninja/rk-mux/middleware/meta"
+	"github.com/rookie-ninja/rk-mux/middleware/panic"
+	"github.com/rookie-ninja/rk-mux/middleware/prom"
+	"github.com/rookie-ninja/rk-mux/middleware/ratelimit"
+	"github.com/rookie-ninja/rk-mux/middleware/secure"
+	"github.com/rookie-ninja/rk-mux/middleware/tracing"
 	"github.com/rookie-ninja/rk-query"
 	"go.uber.org/zap"
 	"net"
 	"net/http"
-	"path"
-	"reflect"
-	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 const (
 	// MuxEntryType type of entry
-	MuxEntryType = "Mux"
-	// MuxEntryDescription description of entry
-	MuxEntryDescription = "Internal RK entry which helps to bootstrap with mux framework."
+	MuxEntryType = "MuxEntry"
 )
 
 // This must be declared in order to register registration function into rk context
 // otherwise, rk-boot won't able to bootstrap Mux entry automatically from boot config file
 func init() {
-	rkentry.RegisterEntryRegFunc(RegisterMuxEntriesWithConfig)
+	rkentry.RegisterEntryRegFunc(RegisterMuxEntryYAML)
 }
 
-// BootConfig boot config which is for Mux entry.
-type BootConfig struct {
+// BootMux boot config which is for Mux entry.
+type BootMux struct {
 	Mux []struct {
-		Enabled       bool                            `yaml:"enabled" json:"enabled"`
-		Name          string                          `yaml:"name" json:"name"`
-		Port          uint64                          `yaml:"port" json:"port"`
-		Description   string                          `yaml:"description" json:"description"`
-		CertEntry     string                          `yaml:"certEntry" json:"certEntry"`
-		SW            rkentry.BootConfigSw            `yaml:"sw" json:"sw"`
-		CommonService rkentry.BootConfigCommonService `yaml:"commonService" json:"commonService"`
-		TV            rkentry.BootConfigTv            `yaml:"tv" json:"tv"`
-		Prom          rkentry.BootConfigProm          `yaml:"prom" json:"prom"`
-		Static        rkentry.BootConfigStaticHandler `yaml:"static" json:"static"`
-		Interceptors  struct {
-			LoggingZap       rkmidlog.BootConfig     `yaml:"loggingZap" json:"loggingZap"`
-			MetricsProm      rkmidmetrics.BootConfig `yaml:"metricsProm" json:"metricsProm"`
-			Auth             rkmidauth.BootConfig    `yaml:"auth" json:"auth"`
-			Cors             rkmidcors.BootConfig    `yaml:"cors" json:"cors"`
-			Meta             rkmidmeta.BootConfig    `yaml:"meta" json:"meta"`
-			Jwt              rkmidjwt.BootConfig     `yaml:"jwt" json:"jwt"`
-			Secure           rkmidsec.BootConfig     `yaml:"secure" json:"secure"`
-			RateLimit        rkmidlimit.BootConfig   `yaml:"rateLimit" json:"rateLimit"`
-			Csrf             rkmidcsrf.BootConfig    `yaml:"csrf" yaml:"csrf"`
-			TracingTelemetry rkmidtrace.BootConfig   `yaml:"tracingTelemetry" json:"tracingTelemetry"`
-		} `yaml:"interceptors" json:"interceptors"`
-		Logger struct {
-			ZapLogger   string `yaml:"zapLogger" json:"zapLogger"`
-			EventLogger string `yaml:"eventLogger" json:"eventLogger"`
-		} `yaml:"logger" json:"logger"`
+		Enabled       bool                          `yaml:"enabled" json:"enabled"`
+		Name          string                        `yaml:"name" json:"name"`
+		Port          uint64                        `yaml:"port" json:"port"`
+		Description   string                        `yaml:"description" json:"description"`
+		SW            rkentry.BootSW                `yaml:"sw" json:"sw"`
+		Docs          rkentry.BootDocs              `yaml:"docs" json:"docs"`
+		CommonService rkentry.BootCommonService     `yaml:"commonService" json:"commonService"`
+		Prom          rkentry.BootProm              `yaml:"prom" json:"prom"`
+		CertEntry     string                        `yaml:"certEntry" json:"certEntry"`
+		LoggerEntry   string                        `yaml:"loggerEntry" json:"loggerEntry"`
+		EventEntry    string                        `yaml:"eventEntry" json:"eventEntry"`
+		Static        rkentry.BootStaticFileHandler `yaml:"static" json:"static"`
+		Middleware    struct {
+			Ignore    []string              `yaml:"ignore" json:"ignore"`
+			Logging   rkmidlog.BootConfig   `yaml:"logging" json:"logging"`
+			Prom      rkmidprom.BootConfig  `yaml:"prom" json:"prom"`
+			Auth      rkmidauth.BootConfig  `yaml:"auth" json:"auth"`
+			Cors      rkmidcors.BootConfig  `yaml:"cors" json:"cors"`
+			Meta      rkmidmeta.BootConfig  `yaml:"meta" json:"meta"`
+			Jwt       rkmidjwt.BootConfig   `yaml:"jwt" json:"jwt"`
+			Secure    rkmidsec.BootConfig   `yaml:"secure" json:"secure"`
+			RateLimit rkmidlimit.BootConfig `yaml:"rateLimit" json:"rateLimit"`
+			Csrf      rkmidcsrf.BootConfig  `yaml:"csrf" yaml:"csrf"`
+			Trace     rkmidtrace.BootConfig `yaml:"trace" json:"trace"`
+		} `yaml:"middleware" json:"middleware"`
 	} `yaml:"mux" json:"mux"`
 }
 
 // MuxEntry implements rkentry.Entry interface.
 type MuxEntry struct {
-	EntryName          string                          `json:"entryName" yaml:"entryName"`
-	EntryType          string                          `json:"entryType" yaml:"entryType"`
-	EntryDescription   string                          `json:"-" yaml:"-"`
-	ZapLoggerEntry     *rkentry.ZapLoggerEntry         `json:"-" yaml:"-"`
-	EventLoggerEntry   *rkentry.EventLoggerEntry       `json:"-" yaml:"-"`
-	Port               uint64                          `json:"port" yaml:"port"`
+	entryName          string                          `json:"-" yaml:"-"`
+	entryType          string                          `json:"-" yaml:"-"`
+	entryDescription   string                          `json:"-" yaml:"-"`
+	Port               uint64                          `json:"-" yaml:"-"`
+	LoggerEntry        *rkentry.LoggerEntry            `json:"-" yaml:"-"`
+	EventEntry         *rkentry.EventEntry             `json:"-" yaml:"-"`
 	CertEntry          *rkentry.CertEntry              `json:"-" yaml:"-"`
-	SwEntry            *rkentry.SwEntry                `json:"-" yaml:"-"`
+	SwEntry            *rkentry.SWEntry                `json:"-" yaml:"-"`
 	CommonServiceEntry *rkentry.CommonServiceEntry     `json:"-" yaml:"-"`
 	Router             *mux.Router                     `json:"-" yaml:"-"`
 	Server             *http.Server                    `json:"-" yaml:"-"`
 	TlsConfig          *tls.Config                     `json:"-" yaml:"-"`
-	Interceptors       []mux.MiddlewareFunc            `json:"-" yaml:"-"`
+	Middlewares        []mux.MiddlewareFunc            `json:"-" yaml:"-"`
 	PromEntry          *rkentry.PromEntry              `json:"-" yaml:"-"`
-	TvEntry            *rkentry.TvEntry                `json:"-" yaml:"-"`
+	DocsEntry          *rkentry.DocsEntry              `json:"-" yaml:"-"`
 	StaticFileEntry    *rkentry.StaticFileHandlerEntry `json:"-" yaml:"-"`
+	bootstrapLogOnce   sync.Once                       `json:"-" yaml:"-"`
 }
 
-// RegisterMuxEntriesWithConfig register Mux entries with provided config file (Must YAML file).
+// RegisterMuxEntryYAML register Mux entries with provided config file (Must YAML file).
 //
 // Currently, support two ways to provide config file path.
 // 1: With function parameters
@@ -134,12 +128,12 @@ type MuxEntry struct {
 // Example of common usage: ./binary_file --rkset "key1=val1,key2=val2"
 // Example of nested map:   ./binary_file --rkset "outer.inner.key=val"
 // Example of slice:        ./binary_file --rkset "outer[0].key=val"
-func RegisterMuxEntriesWithConfig(configFilePath string) map[string]rkentry.Entry {
+func RegisterMuxEntryYAML(raw []byte) map[string]rkentry.Entry {
 	res := make(map[string]rkentry.Entry)
 
 	// 1: Decode config map into boot config struct
-	config := &BootConfig{}
-	rkcommon.UnmarshalBootConfig(configFilePath, config)
+	config := &BootMux{}
+	rkentry.UnmarshalBootYAML(raw, config)
 
 	// 2: Init Mux entries with boot config
 	for i := range config.Mux {
@@ -150,117 +144,124 @@ func RegisterMuxEntriesWithConfig(configFilePath string) map[string]rkentry.Entr
 
 		name := element.Name
 
-		zapLoggerEntry := rkentry.GlobalAppCtx.GetZapLoggerEntry(element.Logger.ZapLogger)
-		if zapLoggerEntry == nil {
-			zapLoggerEntry = rkentry.GlobalAppCtx.GetZapLoggerEntryDefault()
+		// logger entry
+		loggerEntry := rkentry.GlobalAppCtx.GetLoggerEntry(element.LoggerEntry)
+		if loggerEntry == nil {
+			loggerEntry = rkentry.LoggerEntryStdout
 		}
 
-		eventLoggerEntry := rkentry.GlobalAppCtx.GetEventLoggerEntry(element.Logger.EventLogger)
-		if eventLoggerEntry == nil {
-			eventLoggerEntry = rkentry.GlobalAppCtx.GetEventLoggerEntryDefault()
+		// event entry
+		eventEntry := rkentry.GlobalAppCtx.GetEventEntry(element.EventEntry)
+		if eventEntry == nil {
+			eventEntry = rkentry.EventEntryStdout
 		}
+
+		// cert entry
+		certEntry := rkentry.GlobalAppCtx.GetCertEntry(element.CertEntry)
 
 		// Register swagger entry
-		swEntry := rkentry.RegisterSwEntryWithConfig(&element.SW, element.Name, element.Port,
-			zapLoggerEntry, eventLoggerEntry, element.CommonService.Enabled)
+		swEntry := rkentry.RegisterSWEntry(&element.SW, rkentry.WithNameSWEntry(element.Name))
+
+		// Register docs entry
+		docsEntry := rkentry.RegisterDocsEntry(&element.Docs, rkentry.WithNameDocsEntry(element.Name))
 
 		// Register prometheus entry
 		promRegistry := prometheus.NewRegistry()
-		promEntry := rkentry.RegisterPromEntryWithConfig(&element.Prom, element.Name, element.Port,
-			zapLoggerEntry, eventLoggerEntry, promRegistry)
+		promEntry := rkentry.RegisterPromEntry(&element.Prom, rkentry.WithRegistryPromEntry(promRegistry))
 
 		// Register common service entry
-		commonServiceEntry := rkentry.RegisterCommonServiceEntryWithConfig(&element.CommonService, element.Name,
-			zapLoggerEntry, eventLoggerEntry)
-
-		// Register TV entry
-		tvEntry := rkentry.RegisterTvEntryWithConfig(&element.TV, element.Name,
-			zapLoggerEntry, eventLoggerEntry)
+		commonServiceEntry := rkentry.RegisterCommonServiceEntry(&element.CommonService)
 
 		// Register static file handler
-		staticEntry := rkentry.RegisterStaticFileHandlerEntryWithConfig(&element.Static, element.Name,
-			zapLoggerEntry, eventLoggerEntry)
+		staticEntry := rkentry.RegisterStaticFileHandlerEntry(&element.Static, rkentry.WithNameStaticFileHandlerEntry(element.Name))
 
 		inters := make([]mux.MiddlewareFunc, 0)
 
+		// add global path ignorance
+		rkmid.AddPathToIgnoreGlobal(element.Middleware.Ignore...)
+
 		// logging middlewares
-		if element.Interceptors.LoggingZap.Enabled {
-			inters = append(inters, rkmuxlog.Interceptor(
-				rkmidlog.ToOptions(&element.Interceptors.LoggingZap, element.Name, MuxEntryType,
-					zapLoggerEntry, eventLoggerEntry)...))
+		if element.Middleware.Logging.Enabled {
+			inters = append(inters, rkmuxlog.Middleware(
+				rkmidlog.ToOptions(&element.Middleware.Logging, element.Name, MuxEntryType,
+					loggerEntry, eventEntry)...))
+
 		}
 
+		// Default interceptor should be placed after logging middleware, we should make sure interceptors never panic
+		// insert panic interceptor
+		inters = append(inters, rkmuxpanic.Middleware(
+			rkmidpanic.WithEntryNameAndType(element.Name, MuxEntryType)))
+
 		// metrics middleware
-		if element.Interceptors.MetricsProm.Enabled {
-			inters = append(inters, rkmuxmetrics.Interceptor(
-				rkmidmetrics.ToOptions(&element.Interceptors.MetricsProm, element.Name, MuxEntryType,
-					promRegistry, rkmidmetrics.LabelerTypeHttp)...))
+		if element.Middleware.Prom.Enabled {
+			inters = append(inters, rkmuxprom.Middleware(
+				rkmidprom.ToOptions(&element.Middleware.Prom, element.Name, MuxEntryType,
+					promRegistry, rkmidprom.LabelerTypeHttp)...))
 		}
 
 		// tracing middleware
-		if element.Interceptors.TracingTelemetry.Enabled {
-			inters = append(inters, rkmuxtrace.Interceptor(
-				rkmidtrace.ToOptions(&element.Interceptors.TracingTelemetry, element.Name, MuxEntryType)...))
+		if element.Middleware.Trace.Enabled {
+			inters = append(inters, rkmuxtrace.Middleware(
+				rkmidtrace.ToOptions(&element.Middleware.Trace, element.Name, MuxEntryType)...))
 		}
 
 		// jwt middleware
-		if element.Interceptors.Jwt.Enabled {
+		if element.Middleware.Jwt.Enabled {
 			inters = append(inters, rkmuxjwt.Interceptor(
-				rkmidjwt.ToOptions(&element.Interceptors.Jwt, element.Name, MuxEntryType)...))
+				rkmidjwt.ToOptions(&element.Middleware.Jwt, element.Name, MuxEntryType)...))
 		}
 
 		// secure middleware
-		if element.Interceptors.Secure.Enabled {
-			inters = append(inters, rkmuxsec.Interceptor(
-				rkmidsec.ToOptions(&element.Interceptors.Secure, element.Name, MuxEntryType)...))
+		if element.Middleware.Secure.Enabled {
+			inters = append(inters, rkmuxsec.Middleware(
+				rkmidsec.ToOptions(&element.Middleware.Secure, element.Name, MuxEntryType)...))
 		}
 
 		// csrf middleware
-		if element.Interceptors.Csrf.Enabled {
-			inters = append(inters, rkmuxcsrf.Interceptor(
-				rkmidcsrf.ToOptions(&element.Interceptors.Csrf, element.Name, MuxEntryType)...))
+		if element.Middleware.Csrf.Enabled {
+			inters = append(inters, rkmuxcsrf.Middleware(
+				rkmidcsrf.ToOptions(&element.Middleware.Csrf, element.Name, MuxEntryType)...))
 		}
 
 		// cors middleware
-		if element.Interceptors.Cors.Enabled {
-			inters = append(inters, rkmuxcors.Interceptor(
-				rkmidcors.ToOptions(&element.Interceptors.Cors, element.Name, MuxEntryType)...))
+		if element.Middleware.Cors.Enabled {
+			inters = append(inters, rkmuxcors.Middleware(
+				rkmidcors.ToOptions(&element.Middleware.Cors, element.Name, MuxEntryType)...))
 		}
 
 		// meta middleware
-		if element.Interceptors.Meta.Enabled {
-			inters = append(inters, rkmuxmeta.Interceptor(
-				rkmidmeta.ToOptions(&element.Interceptors.Meta, element.Name, MuxEntryType)...))
+		if element.Middleware.Meta.Enabled {
+			inters = append(inters, rkmuxmeta.Middleware(
+				rkmidmeta.ToOptions(&element.Middleware.Meta, element.Name, MuxEntryType)...))
 		}
 
 		// auth middlewares
-		if element.Interceptors.Auth.Enabled {
-			inters = append(inters, rkmuxauth.Interceptor(
-				rkmidauth.ToOptions(&element.Interceptors.Auth, element.Name, MuxEntryType)...))
+		if element.Middleware.Auth.Enabled {
+			inters = append(inters, rkmuxauth.Middleware(
+				rkmidauth.ToOptions(&element.Middleware.Auth, element.Name, MuxEntryType)...))
 		}
 
 		// rate limit middleware
-		if element.Interceptors.RateLimit.Enabled {
-			inters = append(inters, rkmuxlimit.Interceptor(
-				rkmidlimit.ToOptions(&element.Interceptors.RateLimit, element.Name, MuxEntryType)...))
+		if element.Middleware.RateLimit.Enabled {
+			inters = append(inters, rkmuxlimit.Middleware(
+				rkmidlimit.ToOptions(&element.Middleware.RateLimit, element.Name, MuxEntryType)...))
 		}
-
-		certEntry := rkentry.GlobalAppCtx.GetCertEntry(element.CertEntry)
 
 		entry := RegisterMuxEntry(
 			WithName(name),
 			WithDescription(element.Description),
 			WithPort(element.Port),
-			WithZapLoggerEntry(zapLoggerEntry),
-			WithEventLoggerEntry(eventLoggerEntry),
+			WithLoggerEntry(loggerEntry),
+			WithEventEntry(eventEntry),
 			WithCertEntry(certEntry),
 			WithPromEntry(promEntry),
-			WithTvEntry(tvEntry),
+			WithDocsEntry(docsEntry),
 			WithCommonServiceEntry(commonServiceEntry),
 			WithSwEntry(swEntry),
 			WithStaticFileHandlerEntry(staticEntry))
 
-		entry.AddInterceptor(inters...)
+		entry.AddMiddleware(inters...)
 
 		res[name] = entry
 	}
@@ -271,25 +272,19 @@ func RegisterMuxEntriesWithConfig(configFilePath string) map[string]rkentry.Entr
 // RegisterMuxEntry register MuxEntry with options.
 func RegisterMuxEntry(opts ...MuxEntryOption) *MuxEntry {
 	entry := &MuxEntry{
-		EntryType:        MuxEntryType,
-		EntryDescription: MuxEntryDescription,
-		Port:             8080,
+		entryType:        MuxEntryType,
+		entryDescription: "Internal RK entry which helps to bootstrap with mux framework.",
+		LoggerEntry:      rkentry.NewLoggerEntryStdout(),
+		EventEntry:       rkentry.NewEventEntryStdout(),
+		Port:             80,
 	}
 
 	for i := range opts {
 		opts[i](entry)
 	}
 
-	if entry.ZapLoggerEntry == nil {
-		entry.ZapLoggerEntry = rkentry.GlobalAppCtx.GetZapLoggerEntryDefault()
-	}
-
-	if entry.EventLoggerEntry == nil {
-		entry.EventLoggerEntry = rkentry.GlobalAppCtx.GetEventLoggerEntryDefault()
-	}
-
-	if len(entry.EntryName) < 1 {
-		entry.EntryName = "MuxServer-" + strconv.FormatUint(entry.Port, 10)
+	if len(entry.entryName) < 1 {
+		entry.entryName = "mux-" + strconv.FormatUint(entry.Port, 10)
 	}
 
 	if entry.Router == nil {
@@ -297,29 +292,20 @@ func RegisterMuxEntry(opts ...MuxEntryOption) *MuxEntry {
 	}
 
 	// add entry name and entry type into loki syncer if enabled
-	entry.ZapLoggerEntry.AddEntryLabelToLokiSyncer(entry)
-	entry.EventLoggerEntry.AddEntryLabelToLokiSyncer(entry)
+	entry.LoggerEntry.AddEntryLabelToLokiSyncer(entry)
+	entry.EventEntry.AddEntryLabelToLokiSyncer(entry)
 
 	// Init TLS config
 	if entry.IsTlsEnabled() {
-		var cert tls.Certificate
-		var err error
-		if cert, err = tls.X509KeyPair(entry.CertEntry.Store.ServerCert, entry.CertEntry.Store.ServerKey); err != nil {
-			entry.ZapLoggerEntry.GetLogger().Error("Error occurs while parsing TLS.", zap.String("cert", entry.CertEntry.String()))
-		} else {
-			entry.TlsConfig = &tls.Config{
-				InsecureSkipVerify: true,
-				Certificates:       []tls.Certificate{cert},
-			}
+		entry.TlsConfig = &tls.Config{
+			InsecureSkipVerify: true,
+			Certificates:       []tls.Certificate{*entry.CertEntry.Certificate},
 		}
 	}
 
 	entry.Server = &http.Server{
 		Addr: "0.0.0.0:" + strconv.FormatUint(entry.Port, 10),
 	}
-
-	entry.Router.Use(rkmuxpanic.Interceptor(
-		rkmidpanic.WithEntryNameAndType(entry.EntryName, entry.EntryType)))
 
 	rkentry.GlobalAppCtx.AddEntry(entry)
 
@@ -330,6 +316,17 @@ func RegisterMuxEntry(opts ...MuxEntryOption) *MuxEntry {
 func (entry *MuxEntry) Bootstrap(ctx context.Context) {
 	event, logger := entry.logBasicInfo("Bootstrap", ctx)
 
+	// Is common service enabled?
+	if entry.IsCommonServiceEnabled() {
+		entry.Router.NewRoute().Methods(http.MethodGet).Path(entry.CommonServiceEntry.ReadyPath).HandlerFunc(entry.CommonServiceEntry.Ready)
+		entry.Router.NewRoute().Methods(http.MethodGet).Path(entry.CommonServiceEntry.AlivePath).HandlerFunc(entry.CommonServiceEntry.Alive)
+		entry.Router.NewRoute().Methods(http.MethodGet).Path(entry.CommonServiceEntry.GcPath).HandlerFunc(entry.CommonServiceEntry.Gc)
+		entry.Router.NewRoute().Methods(http.MethodGet).Path(entry.CommonServiceEntry.InfoPath).HandlerFunc(entry.CommonServiceEntry.Info)
+
+		// Bootstrap common service entry.
+		entry.CommonServiceEntry.Bootstrap(ctx)
+	}
+
 	// Is swagger enabled?
 	if entry.IsSwEnabled() {
 		redirect := func(writer http.ResponseWriter, request *http.Request) {
@@ -338,13 +335,24 @@ func (entry *MuxEntry) Bootstrap(ctx context.Context) {
 		}
 
 		entry.Router.NewRoute().Methods(http.MethodGet).Path(strings.TrimSuffix(entry.SwEntry.Path, "/")).HandlerFunc(redirect)
-
-		// Register swagger path into Router.
 		entry.Router.NewRoute().Methods(http.MethodGet).PathPrefix(entry.SwEntry.Path).HandlerFunc(entry.SwEntry.ConfigFileHandler())
-		entry.Router.NewRoute().Methods(http.MethodGet).PathPrefix(entry.SwEntry.AssetsFilePath).HandlerFunc(entry.SwEntry.AssetsFileHandler())
 
 		// Bootstrap swagger entry.
 		entry.SwEntry.Bootstrap(ctx)
+	}
+
+	// Is Docs enabled?
+	if entry.IsDocsEnabled() {
+		// Bootstrap TV entry.
+		redirect := func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Location", entry.DocsEntry.Path)
+			writer.WriteHeader(http.StatusTemporaryRedirect)
+		}
+
+		entry.Router.NewRoute().Methods(http.MethodGet).Path(strings.TrimSuffix(entry.DocsEntry.Path, "/")).HandlerFunc(redirect)
+		entry.Router.NewRoute().Methods(http.MethodGet).PathPrefix(entry.DocsEntry.Path).HandlerFunc(entry.DocsEntry.ConfigFileHandler())
+
+		entry.DocsEntry.Bootstrap(ctx)
 	}
 
 	// Is static file handler enabled?
@@ -371,48 +379,38 @@ func (entry *MuxEntry) Bootstrap(ctx context.Context) {
 		entry.PromEntry.Bootstrap(ctx)
 	}
 
-	// Is common service enabled?
-	if entry.IsCommonServiceEnabled() {
-		entry.Router.NewRoute().Methods(http.MethodGet).Path(entry.CommonServiceEntry.HealthyPath).HandlerFunc(entry.CommonServiceEntry.Healthy)
-		entry.Router.NewRoute().Methods(http.MethodGet).Path(entry.CommonServiceEntry.GcPath).HandlerFunc(entry.CommonServiceEntry.Gc)
-		entry.Router.NewRoute().Methods(http.MethodGet).Path(entry.CommonServiceEntry.InfoPath).HandlerFunc(entry.CommonServiceEntry.Info)
-		entry.Router.NewRoute().Methods(http.MethodGet).Path(entry.CommonServiceEntry.ConfigsPath).HandlerFunc(entry.CommonServiceEntry.Configs)
-		entry.Router.NewRoute().Methods(http.MethodGet).Path(entry.CommonServiceEntry.SysPath).HandlerFunc(entry.CommonServiceEntry.Sys)
-		entry.Router.NewRoute().Methods(http.MethodGet).Path(entry.CommonServiceEntry.EntriesPath).HandlerFunc(entry.CommonServiceEntry.Entries)
-		entry.Router.NewRoute().Methods(http.MethodGet).Path(entry.CommonServiceEntry.CertsPath).HandlerFunc(entry.CommonServiceEntry.Certs)
-		entry.Router.NewRoute().Methods(http.MethodGet).Path(entry.CommonServiceEntry.LogsPath).HandlerFunc(entry.CommonServiceEntry.Logs)
-		entry.Router.NewRoute().Methods(http.MethodGet).Path(entry.CommonServiceEntry.DepsPath).HandlerFunc(entry.CommonServiceEntry.Deps)
-		entry.Router.NewRoute().Methods(http.MethodGet).Path(entry.CommonServiceEntry.LicensePath).HandlerFunc(entry.CommonServiceEntry.License)
-		entry.Router.NewRoute().Methods(http.MethodGet).Path(entry.CommonServiceEntry.ReadmePath).HandlerFunc(entry.CommonServiceEntry.Readme)
-		entry.Router.NewRoute().Methods(http.MethodGet).Path(entry.CommonServiceEntry.GitPath).HandlerFunc(entry.CommonServiceEntry.Git)
-
-		entry.Router.NewRoute().Methods(http.MethodGet).Path(entry.CommonServiceEntry.ApisPath).HandlerFunc(entry.Apis)
-		entry.Router.NewRoute().Methods(http.MethodGet).Path(entry.CommonServiceEntry.ReqPath).HandlerFunc(entry.Req)
-
-		// Bootstrap common service entry.
-		entry.CommonServiceEntry.Bootstrap(ctx)
-	}
-
-	// Is TV enabled?
-	if entry.IsTvEnabled() {
-		// Bootstrap TV entry.
-		redirect := func(writer http.ResponseWriter, request *http.Request) {
-			writer.Header().Set("Location", "/rk/v1/tv/overview")
-			writer.WriteHeader(http.StatusTemporaryRedirect)
-		}
-
-		entry.Router.NewRoute().Methods(http.MethodGet).Path(strings.TrimSuffix(entry.TvEntry.BasePath, "/")).HandlerFunc(redirect)
-		entry.Router.NewRoute().Methods(http.MethodGet).Path(entry.TvEntry.BasePath).HandlerFunc(redirect)
-
-		entry.Router.NewRoute().Methods(http.MethodGet).Path(path.Join(entry.TvEntry.BasePath, "{item}")).HandlerFunc(entry.TV)
-		entry.Router.NewRoute().Methods(http.MethodGet).PathPrefix(entry.TvEntry.AssetsFilePath).HandlerFunc(entry.TvEntry.AssetsFileHandler())
-
-		entry.TvEntry.Bootstrap(ctx)
-	}
-
 	go entry.startServer(event, logger)
 
-	entry.EventLoggerEntry.GetEventHelper().Finish(event)
+	entry.bootstrapLogOnce.Do(func() {
+		// Print link and logging message
+		scheme := "http"
+		if entry.IsTlsEnabled() {
+			scheme = "https"
+		}
+
+		if entry.IsSwEnabled() {
+			entry.LoggerEntry.Info(fmt.Sprintf("SwaggerEntry: %s://localhost:%d%s", scheme, entry.Port, entry.SwEntry.Path))
+		}
+		if entry.IsDocsEnabled() {
+			entry.LoggerEntry.Info(fmt.Sprintf("DocsEntry: %s://localhost:%d%s", scheme, entry.Port, entry.DocsEntry.Path))
+		}
+		if entry.IsPromEnabled() {
+			entry.LoggerEntry.Info(fmt.Sprintf("PromEntry: %s://localhost:%d%s", scheme, entry.Port, entry.PromEntry.Path))
+		}
+		if entry.IsStaticFileHandlerEnabled() {
+			entry.LoggerEntry.Info(fmt.Sprintf("StaticFileHandlerEntry: %s://localhost:%d%s", scheme, entry.Port, entry.StaticFileEntry.Path))
+		}
+		if entry.IsCommonServiceEnabled() {
+			handlers := []string{
+				fmt.Sprintf("%s://localhost:%d%s", scheme, entry.Port, entry.CommonServiceEntry.ReadyPath),
+				fmt.Sprintf("%s://localhost:%d%s", scheme, entry.Port, entry.CommonServiceEntry.AlivePath),
+				fmt.Sprintf("%s://localhost:%d%s", scheme, entry.Port, entry.CommonServiceEntry.InfoPath),
+			}
+
+			entry.LoggerEntry.Info(fmt.Sprintf("CommonSreviceEntry: %s", strings.Join(handlers, ", ")))
+		}
+		entry.EventEntry.Finish(event)
+	})
 }
 
 // Interrupt MuxEntry.
@@ -434,9 +432,9 @@ func (entry *MuxEntry) Interrupt(ctx context.Context) {
 		entry.CommonServiceEntry.Interrupt(ctx)
 	}
 
-	if entry.IsTvEnabled() {
+	if entry.IsDocsEnabled() {
 		// Interrupt common service entry
-		entry.TvEntry.Interrupt(ctx)
+		entry.DocsEntry.Interrupt(ctx)
 	}
 
 	if entry.Server != nil {
@@ -446,22 +444,22 @@ func (entry *MuxEntry) Interrupt(ctx context.Context) {
 		}
 	}
 
-	entry.EventLoggerEntry.GetEventHelper().Finish(event)
+	entry.EventEntry.Finish(event)
 }
 
 // GetName Get entry name.
 func (entry *MuxEntry) GetName() string {
-	return entry.EntryName
+	return entry.entryName
 }
 
 // GetType Get entry type.
 func (entry *MuxEntry) GetType() string {
-	return entry.EntryType
+	return entry.entryType
 }
 
 // GetDescription Get description of entry.
 func (entry *MuxEntry) GetDescription() string {
-	return entry.EntryDescription
+	return entry.entryDescription
 }
 
 // String Stringfy entry.
@@ -475,29 +473,19 @@ func (entry *MuxEntry) String() string {
 // MarshalJSON Marshal entry.
 func (entry *MuxEntry) MarshalJSON() ([]byte, error) {
 	m := map[string]interface{}{
-		"entryName":          entry.EntryName,
-		"entryType":          entry.EntryType,
-		"entryDescription":   entry.EntryDescription,
-		"eventLoggerEntry":   entry.EventLoggerEntry.GetName(),
-		"zapLoggerEntry":     entry.ZapLoggerEntry.GetName(),
-		"port":               entry.Port,
-		"swEntry":            entry.SwEntry,
-		"commonServiceEntry": entry.CommonServiceEntry,
-		"promEntry":          entry.PromEntry,
-		"tvEntry":            entry.TvEntry,
+		"name":                   entry.entryName,
+		"type":                   entry.entryType,
+		"description":            entry.entryDescription,
+		"port":                   entry.Port,
+		"swEntry":                entry.SwEntry,
+		"docsEntry":              entry.DocsEntry,
+		"commonServiceEntry":     entry.CommonServiceEntry,
+		"promEntry":              entry.PromEntry,
+		"staticFileHandlerEntry": entry.StaticFileEntry,
 	}
 
 	if entry.CertEntry != nil {
 		m["certEntry"] = entry.CertEntry.GetName()
-	}
-
-	interceptorsStr := make([]string, 0)
-	m["interceptors"] = &interceptorsStr
-
-	for i := range entry.Interceptors {
-		element := entry.Interceptors[i]
-		interceptorsStr = append(interceptorsStr,
-			path.Base(runtime.FuncForPC(reflect.ValueOf(element).Pointer()).Name()))
 	}
 
 	return json.Marshal(&m)
@@ -512,7 +500,7 @@ func (entry *MuxEntry) UnmarshalJSON([]byte) error {
 
 // GetMuxEntry Get MuxEntry from rkentry.GlobalAppCtx.
 func GetMuxEntry(name string) *MuxEntry {
-	entryRaw := rkentry.GlobalAppCtx.GetEntry(name)
+	entryRaw := rkentry.GlobalAppCtx.GetEntry(MuxEntryType, name)
 	if entryRaw == nil {
 		return nil
 	}
@@ -521,15 +509,15 @@ func GetMuxEntry(name string) *MuxEntry {
 	return entry
 }
 
-// AddInterceptor Add interceptors.
+// AddMiddleware Add middlewares.
 // This function should be called before Bootstrap() called.
-func (entry *MuxEntry) AddInterceptor(inters ...mux.MiddlewareFunc) {
+func (entry *MuxEntry) AddMiddleware(inters ...mux.MiddlewareFunc) {
 	entry.Router.Use(inters...)
 }
 
 // IsTlsEnabled Is TLS enabled?
 func (entry *MuxEntry) IsTlsEnabled() bool {
-	return entry.CertEntry != nil && entry.CertEntry.Store != nil
+	return entry.CertEntry != nil && entry.CertEntry.Certificate != nil
 }
 
 // IsSwEnabled Is swagger entry enabled?
@@ -542,9 +530,9 @@ func (entry *MuxEntry) IsCommonServiceEnabled() bool {
 	return entry.CommonServiceEntry != nil
 }
 
-// IsTvEnabled Is TV entry enabled?
-func (entry *MuxEntry) IsTvEnabled() bool {
-	return entry.TvEntry != nil
+// IsDocsEnabled Is Docs entry enabled?
+func (entry *MuxEntry) IsDocsEnabled() bool {
+	return entry.DocsEntry != nil
 }
 
 // IsPromEnabled Is prometheus entry enabled?
@@ -567,8 +555,10 @@ func (entry *MuxEntry) startServer(event rkquery.Event, logger *zap.Logger) {
 
 		lis, err := net.Listen("tcp4", ":"+strconv.FormatUint(entry.Port, 10))
 		if err != nil {
-			entry.EventLoggerEntry.GetEventHelper().FinishWithError(event, err)
-			rkcommon.ShutdownWithError(err)
+			entry.bootstrapLogOnce.Do(func() {
+				entry.EventEntry.FinishWithCond(event, false)
+			})
+			rkentry.ShutdownWithError(err)
 		}
 
 		if entry.IsTlsEnabled() {
@@ -577,14 +567,17 @@ func (entry *MuxEntry) startServer(event rkquery.Event, logger *zap.Logger) {
 
 		if err := entry.Server.Serve(lis); err != nil && !strings.Contains(err.Error(), "http: Server closed") {
 			logger.Error("Error occurs while serving gateway-server.", zap.Error(err))
-			rkcommon.ShutdownWithError(err)
+			entry.bootstrapLogOnce.Do(func() {
+				entry.EventEntry.FinishWithCond(event, false)
+			})
+			rkentry.ShutdownWithError(err)
 		}
 	}
 }
 
 // Add basic fields into event.
 func (entry *MuxEntry) logBasicInfo(operation string, ctx context.Context) (rkquery.Event, *zap.Logger) {
-	event := entry.EventLoggerEntry.GetEventHelper().Start(
+	event := entry.EventEntry.Start(
 		operation,
 		rkquery.WithEntryName(entry.GetName()),
 		rkquery.WithEntryType(entry.GetType()))
@@ -596,10 +589,10 @@ func (entry *MuxEntry) logBasicInfo(operation string, ctx context.Context) (rkqu
 		}
 	}
 
-	logger := entry.ZapLoggerEntry.GetLogger().With(
+	logger := entry.LoggerEntry.With(
 		zap.String("eventId", event.GetEventId()),
-		zap.String("entryName", entry.EntryName),
-		zap.String("entryType", entry.EntryType))
+		zap.String("entryName", entry.entryName),
+		zap.String("entryType", entry.entryType))
 
 	// add general info
 	event.AddPayloads(
@@ -619,18 +612,18 @@ func (entry *MuxEntry) logBasicInfo(operation string, ctx context.Context) (rkqu
 			zap.String("commonServicePathPrefix", "/rk/v1/"))
 	}
 
-	// add TvEntry info
-	if entry.IsTvEnabled() {
+	// add DocsEntry info
+	if entry.IsDocsEnabled() {
 		event.AddPayloads(
-			zap.Bool("tvEnabled", true),
-			zap.String("tvPath", "/rk/v1/tv/"))
+			zap.Bool("docsEnabled", true),
+			zap.String("docsPath", entry.DocsEntry.Path))
 	}
 
 	// add PromEntry info
 	if entry.IsPromEnabled() {
 		event.AddPayloads(
 			zap.Bool("promEnabled", true),
-			zap.Uint64("promPort", entry.PromEntry.Port),
+			zap.Uint64("promPort", entry.Port),
 			zap.String("promPath", entry.PromEntry.Path))
 	}
 
@@ -646,137 +639,6 @@ func (entry *MuxEntry) logBasicInfo(operation string, ctx context.Context) (rkqu
 
 }
 
-// ***************** Common Service Extension API *****************
-
-// Apis list apis
-func (entry *MuxEntry) Apis(writer http.ResponseWriter, req *http.Request) {
-	writer.Header().Set("Access-Control-Allow-Origin", "*")
-
-	rkmuxinter.WriteJson(writer, http.StatusOK, entry.doApis(req))
-}
-
-// Req handler
-func (entry *MuxEntry) Req(writer http.ResponseWriter, req *http.Request) {
-	rkmuxinter.WriteJson(writer, http.StatusOK, entry.doReq(req))
-}
-
-// TV handler
-func (entry *MuxEntry) TV(writer http.ResponseWriter, req *http.Request) {
-	logger := rkmuxctx.GetLogger(req, writer)
-	param := mux.Vars(req)
-
-	writer.Header().Set("Content-Type", "text/html;charset=UTF-8")
-
-	switch item := param["item"]; item {
-	case "apis":
-		buf := entry.TvEntry.ExecuteTemplate("apis", entry.doApis(req), logger)
-		writer.WriteHeader(http.StatusOK)
-		writer.Write(buf.Bytes())
-	default:
-		buf := entry.TvEntry.Action(item, logger)
-		writer.WriteHeader(http.StatusOK)
-		writer.Write(buf.Bytes())
-	}
-}
-
-// Construct swagger URL based on IP and scheme
-func (entry *MuxEntry) constructSwUrl(req *http.Request) string {
-	if entry == nil || entry.SwEntry == nil {
-		return "N/A"
-	}
-
-	originalURL := fmt.Sprintf("localhost:%d", entry.Port)
-	if req != nil && len(req.Host) > 0 {
-		originalURL = req.Host
-	}
-
-	scheme := "http"
-	if req != nil && req.TLS != nil {
-		scheme = "https"
-	}
-
-	return fmt.Sprintf("%s://%s%s", scheme, originalURL, entry.SwEntry.Path)
-}
-
-// Helper function for APIs call
-func (entry *MuxEntry) doApis(req *http.Request) *rkentry.ApisResponse {
-	res := &rkentry.ApisResponse{
-		Entries: make([]*rkentry.ApisResponseElement, 0),
-	}
-
-	entry.Router.Walk(func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
-		pathTemp, _ := route.GetPathTemplate()
-		rawMethods, _ := route.GetMethods()
-		methods := strings.Join(rawMethods, ",")
-
-		entry := &rkentry.ApisResponseElement{
-			EntryName: entry.GetName(),
-			Method:    methods,
-			Path:      pathTemp,
-			Port:      entry.Port,
-			SwUrl:     entry.constructSwUrl(req),
-		}
-		res.Entries = append(res.Entries, entry)
-
-		return nil
-	})
-
-	return res
-}
-
-// Is metrics from prometheus contains particular api?
-func (entry *MuxEntry) containsMetrics(api string, metrics []*rkentry.ReqMetricsRK) bool {
-	for i := range metrics {
-		if metrics[i].RestPath == api {
-			return true
-		}
-	}
-
-	return false
-}
-
-// Helper function for Req call
-func (entry *MuxEntry) doReq(req *http.Request) *rkentry.ReqResponse {
-	metricsSet := rkmidmetrics.GetServerMetricsSet(entry.GetName())
-	if metricsSet == nil {
-		return &rkentry.ReqResponse{
-			Metrics: make([]*rkentry.ReqMetricsRK, 0),
-		}
-	}
-
-	vector := metricsSet.GetSummary(rkmidmetrics.MetricsNameElapsedNano)
-	if vector == nil {
-		return &rkentry.ReqResponse{
-			Metrics: make([]*rkentry.ReqMetricsRK, 0),
-		}
-	}
-
-	reqMetrics := rkentry.NewPromMetricsInfo(vector)
-
-	// Fill missed metrics
-	apis := make([]string, 0)
-
-	entry.Router.Walk(func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
-		pathTemp, _ := route.GetPathTemplate()
-		apis = append(apis, pathTemp)
-		return nil
-	})
-
-	// Add empty metrics into result
-	for i := range apis {
-		if !entry.containsMetrics(apis[i], reqMetrics) {
-			reqMetrics = append(reqMetrics, &rkentry.ReqMetricsRK{
-				RestPath: apis[i],
-				ResCode:  make([]*rkentry.ResCodeRK, 0),
-			})
-		}
-	}
-
-	return &rkentry.ReqResponse{
-		Metrics: reqMetrics,
-	}
-}
-
 // ***************** Options *****************
 
 // MuxEntryOption Mux entry option.
@@ -785,14 +647,14 @@ type MuxEntryOption func(*MuxEntry)
 // WithName provide name.
 func WithName(name string) MuxEntryOption {
 	return func(entry *MuxEntry) {
-		entry.EntryName = name
+		entry.entryName = name
 	}
 }
 
 // WithDescription provide name.
 func WithDescription(description string) MuxEntryOption {
 	return func(entry *MuxEntry) {
-		entry.EntryDescription = description
+		entry.entryDescription = description
 	}
 }
 
@@ -803,17 +665,17 @@ func WithPort(port uint64) MuxEntryOption {
 	}
 }
 
-// WithZapLoggerEntry provide rkentry.ZapLoggerEntry.
-func WithZapLoggerEntry(zapLogger *rkentry.ZapLoggerEntry) MuxEntryOption {
+// WithLoggerEntry provide rkentry.LoggerEntry.
+func WithLoggerEntry(zapLogger *rkentry.LoggerEntry) MuxEntryOption {
 	return func(entry *MuxEntry) {
-		entry.ZapLoggerEntry = zapLogger
+		entry.LoggerEntry = zapLogger
 	}
 }
 
-// WithEventLoggerEntry provide rkentry.EventLoggerEntry.
-func WithEventLoggerEntry(eventLogger *rkentry.EventLoggerEntry) MuxEntryOption {
+// WithEventEntry provide rkentry.EventEntry.
+func WithEventEntry(eventLogger *rkentry.EventEntry) MuxEntryOption {
 	return func(entry *MuxEntry) {
-		entry.EventLoggerEntry = eventLogger
+		entry.EventEntry = eventLogger
 	}
 }
 
@@ -825,7 +687,7 @@ func WithCertEntry(certEntry *rkentry.CertEntry) MuxEntryOption {
 }
 
 // WithSwEntry provide SwEntry.
-func WithSwEntry(sw *rkentry.SwEntry) MuxEntryOption {
+func WithSwEntry(sw *rkentry.SWEntry) MuxEntryOption {
 	return func(entry *MuxEntry) {
 		entry.SwEntry = sw
 	}
@@ -845,10 +707,10 @@ func WithPromEntry(prom *rkentry.PromEntry) MuxEntryOption {
 	}
 }
 
-// WithTvEntry provide TvEntry.
-func WithTvEntry(tvEntry *rkentry.TvEntry) MuxEntryOption {
+// WithDocsEntry provide DocsEntry.
+func WithDocsEntry(docsEntry *rkentry.DocsEntry) MuxEntryOption {
 	return func(entry *MuxEntry) {
-		entry.TvEntry = tvEntry
+		entry.DocsEntry = docsEntry
 	}
 }
 
