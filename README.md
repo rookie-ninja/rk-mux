@@ -526,8 +526,6 @@ Send application metadata as header to client.
 #### JWT
 In order to make swagger UI and RK tv work under JWT without JWT token, we need to ignore prefixes of paths as bellow.
 
-In order to make swagger UI and RK tv work under JWT without JWT token, we need to ignore prefixes of paths as bellow.
-
 ```yaml
 jwt:
   ...
