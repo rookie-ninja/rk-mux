@@ -6,9 +6,9 @@ require (
 	github.com/golang-jwt/jwt/v4 v4.3.0
 	github.com/gorilla/mux v1.8.0
 	github.com/prometheus/client_golang v1.12.1
-	github.com/rookie-ninja/rk-entry/v2 v2.0.4
+	github.com/rookie-ninja/rk-entry/v2 v2.0.10
 	github.com/rookie-ninja/rk-logger v1.2.10
-	github.com/rookie-ninja/rk-query v1.2.11
+	github.com/rookie-ninja/rk-query v1.2.12
 	github.com/streadway/handy v0.0.0-20190108123426-d5acb3125c2a
 	github.com/stretchr/testify v1.7.0
 	go.opentelemetry.io/otel v1.4.1

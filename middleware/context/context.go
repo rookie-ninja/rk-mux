@@ -9,6 +9,7 @@ package rkmuxctx
 import (
 	"context"
 	"github.com/golang-jwt/jwt/v4"
+	rkcursor "github.com/rookie-ninja/rk-entry/v2/cursor"
 	rkmid "github.com/rookie-ninja/rk-entry/v2/middleware"
 	"github.com/rookie-ninja/rk-logger"
 	"github.com/rookie-ninja/rk-query"
@@ -46,6 +47,14 @@ func SetHeaderToClient(writer http.ResponseWriter, key, value string) {
 		return
 	}
 	writer.Header().Set(key, value)
+}
+
+// GetCursor create rkcursor.Cursor instance
+func GetCursor(req *http.Request, writer http.ResponseWriter) *rkcursor.Cursor {
+	return rkcursor.NewCursor(
+		rkcursor.WithLogger(GetLogger(req, writer)),
+		rkcursor.WithEvent(GetEvent(req)),
+		rkcursor.WithEntryNameAndType(GetEntryName(req), "MuxEntry"))
 }
 
 // GetEvent extract takes the call-scoped EventData from middleware.
