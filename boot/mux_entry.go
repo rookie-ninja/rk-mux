@@ -42,6 +42,8 @@ import (
 	"go.uber.org/zap"
 	"net"
 	"net/http"
+	"net/http/pprof"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -73,6 +75,7 @@ type BootMux struct {
 		LoggerEntry   string                        `yaml:"loggerEntry" json:"loggerEntry"`
 		EventEntry    string                        `yaml:"eventEntry" json:"eventEntry"`
 		Static        rkentry.BootStaticFileHandler `yaml:"static" json:"static"`
+		PProf         rkentry.BootPProf             `yaml:"pprof" json:"pprof"`
 		Middleware    struct {
 			Ignore    []string              `yaml:"ignore" json:"ignore"`
 			Logging   rkmidlog.BootConfig   `yaml:"logging" json:"logging"`
@@ -107,7 +110,9 @@ type MuxEntry struct {
 	PromEntry          *rkentry.PromEntry              `json:"-" yaml:"-"`
 	DocsEntry          *rkentry.DocsEntry              `json:"-" yaml:"-"`
 	StaticFileEntry    *rkentry.StaticFileHandlerEntry `json:"-" yaml:"-"`
-	bootstrapLogOnce   sync.Once                       `json:"-" yaml:"-"`
+	PProfEntry         *rkentry.PProfEntry             `json:"-" yaml:"-"`
+
+	bootstrapLogOnce sync.Once `json:"-" yaml:"-"`
 }
 
 // RegisterMuxEntryYAML register Mux entries with provided config file (Must YAML file).
@@ -174,6 +179,9 @@ func RegisterMuxEntryYAML(raw []byte) map[string]rkentry.Entry {
 
 		// Register static file handler
 		staticEntry := rkentry.RegisterStaticFileHandlerEntry(&element.Static, rkentry.WithNameStaticFileHandlerEntry(element.Name))
+
+		// Register pprof entry
+		pprofEntry := rkentry.RegisterPProfEntry(&element.PProf, rkentry.WithNamePProfEntry(element.Name))
 
 		inters := make([]mux.MiddlewareFunc, 0)
 
@@ -259,6 +267,7 @@ func RegisterMuxEntryYAML(raw []byte) map[string]rkentry.Entry {
 			WithDocsEntry(docsEntry),
 			WithCommonServiceEntry(commonServiceEntry),
 			WithSwEntry(swEntry),
+			WithPProfEntry(pprofEntry),
 			WithStaticFileHandlerEntry(staticEntry))
 
 		entry.AddMiddleware(inters...)
@@ -370,6 +379,28 @@ func (entry *MuxEntry) Bootstrap(ctx context.Context) {
 		entry.StaticFileEntry.Bootstrap(ctx)
 	}
 
+	// Is pprof enabled?
+	if entry.IsPProfEnabled() {
+		entry.Router.NewRoute().Methods(http.MethodGet).Path(strings.TrimSuffix(entry.PProfEntry.Path, "/")).HandlerFunc(
+			func(writer http.ResponseWriter, request *http.Request) {
+				writer.Header().Set("Location", entry.PProfEntry.Path)
+				writer.WriteHeader(http.StatusTemporaryRedirect)
+			})
+
+		entry.Router.NewRoute().Methods(http.MethodGet).Path(entry.PProfEntry.Path).HandlerFunc(pprof.Index)
+		entry.Router.NewRoute().Methods(http.MethodGet).Path(path.Join(entry.PProfEntry.Path, "cmdline")).HandlerFunc(pprof.Cmdline)
+		entry.Router.NewRoute().Methods(http.MethodGet).Path(path.Join(entry.PProfEntry.Path, "profile")).HandlerFunc(pprof.Profile)
+		entry.Router.NewRoute().Methods(http.MethodGet, http.MethodPost).Path(path.Join(entry.PProfEntry.Path, "symbol")).HandlerFunc(pprof.Symbol)
+		entry.Router.NewRoute().Methods(http.MethodGet).Path(path.Join(entry.PProfEntry.Path, "trace")).HandlerFunc(pprof.Trace)
+		entry.Router.NewRoute().Methods(http.MethodGet).Path(path.Join(entry.PProfEntry.Path, "allocs")).HandlerFunc(pprof.Handler("allocs").ServeHTTP)
+		entry.Router.NewRoute().Methods(http.MethodGet).Path(path.Join(entry.PProfEntry.Path, "block")).HandlerFunc(pprof.Handler("block").ServeHTTP)
+		entry.Router.NewRoute().Methods(http.MethodGet).Path(path.Join(entry.PProfEntry.Path, "goroutine")).HandlerFunc(pprof.Handler("goroutine").ServeHTTP)
+		entry.Router.NewRoute().Methods(http.MethodGet).Path(path.Join(entry.PProfEntry.Path, "heap")).HandlerFunc(pprof.Handler("heap").ServeHTTP)
+		entry.Router.NewRoute().Methods(http.MethodGet).Path(path.Join(entry.PProfEntry.Path, "mutex")).HandlerFunc(pprof.Handler("mutex").ServeHTTP)
+		entry.Router.NewRoute().Methods(http.MethodGet).Path(path.Join(entry.PProfEntry.Path, "threadcreate")).HandlerFunc(pprof.Handler("threadcreate").ServeHTTP)
+		entry.PProfEntry.Bootstrap(ctx)
+	}
+
 	// Is prometheus enabled?
 	if entry.IsPromEnabled() {
 		// Register prom path into Router.
@@ -409,6 +440,9 @@ func (entry *MuxEntry) Bootstrap(ctx context.Context) {
 
 			entry.LoggerEntry.Info(fmt.Sprintf("CommonSreviceEntry: %s", strings.Join(handlers, ", ")))
 		}
+		if entry.IsPProfEnabled() {
+			entry.LoggerEntry.Info(fmt.Sprintf("PProfEntry: %s://localhost:%d%s", scheme, entry.Port, entry.PProfEntry.Path))
+		}
 		entry.EventEntry.Finish(event)
 	})
 }
@@ -435,6 +469,10 @@ func (entry *MuxEntry) Interrupt(ctx context.Context) {
 	if entry.IsDocsEnabled() {
 		// Interrupt common service entry
 		entry.DocsEntry.Interrupt(ctx)
+	}
+
+	if entry.IsPProfEnabled() {
+		entry.PProfEntry.Interrupt(ctx)
 	}
 
 	if entry.Server != nil {
@@ -482,6 +520,7 @@ func (entry *MuxEntry) MarshalJSON() ([]byte, error) {
 		"commonServiceEntry":     entry.CommonServiceEntry,
 		"promEntry":              entry.PromEntry,
 		"staticFileHandlerEntry": entry.StaticFileEntry,
+		"pprofEntry":             entry.PProfEntry,
 	}
 
 	if entry.CertEntry != nil {
@@ -543,6 +582,11 @@ func (entry *MuxEntry) IsPromEnabled() bool {
 // IsStaticFileHandlerEnabled Is static file handler entry enabled?
 func (entry *MuxEntry) IsStaticFileHandlerEnabled() bool {
 	return entry.StaticFileEntry != nil
+}
+
+// IsPProfEnabled Is pprof entry enabled?
+func (entry *MuxEntry) IsPProfEnabled() bool {
+	return entry.PProfEntry != nil
 }
 
 // ***************** Helper function *****************
@@ -619,6 +663,13 @@ func (entry *MuxEntry) logBasicInfo(operation string, ctx context.Context) (rkqu
 			zap.String("docsPath", entry.DocsEntry.Path))
 	}
 
+	// add pprofEntry info
+	if entry.IsPProfEnabled() {
+		event.AddPayloads(
+			zap.Bool("pprofEnabled", true),
+			zap.String("pprofPath", entry.PProfEntry.Path))
+	}
+
 	// add PromEntry info
 	if entry.IsPromEnabled() {
 		event.AddPayloads(
@@ -690,6 +741,13 @@ func WithCertEntry(certEntry *rkentry.CertEntry) MuxEntryOption {
 func WithSwEntry(sw *rkentry.SWEntry) MuxEntryOption {
 	return func(entry *MuxEntry) {
 		entry.SwEntry = sw
+	}
+}
+
+// WithPProfEntry provide rkentry.PProfEntry.
+func WithPProfEntry(p *rkentry.PProfEntry) MuxEntryOption {
+	return func(entry *MuxEntry) {
+		entry.PProfEntry = p
 	}
 }
 
