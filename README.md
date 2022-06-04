@@ -4,7 +4,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/rookie-ninja/rk-mux)](https://goreportcard.com/report/github.com/rookie-ninja/rk-mux)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-Middlewares & bootstrapper designed for [gorilla/mux](https://github.com/gorilla/mux) web framework. [Documentation](https://rkdev.info/docs/bootstrapper/user-guide/mux-golang/).
+Middlewares & bootstrapper designed for [gorilla/mux](https://github.com/gorilla/mux) web framework. [Documentation](https://docs.rkdev.info/docs/rk-boot/getting-started/mux/).
 
 This belongs to [rk-boot](https://github.com/rookie-ninja/rk-boot) family. 
 
@@ -605,6 +605,7 @@ The supported scheme of **tokenLookup**
 #  - name: my-logger                                       # Required
 #    description: "Description of entry"                   # Optional
 #    domain: "*"                                           # Optional, default: "*"
+#    default: false                                        # Optional, default: false, use as default logger entry
 #    zap:                                                  # Optional
 #      level: info                                         # Optional, default: info
 #      development: true                                   # Optional, default: true
@@ -650,6 +651,7 @@ The supported scheme of **tokenLookup**
 #  - name: my-event                                        # Required
 #    description: "Description of entry"                   # Optional
 #    domain: "*"                                           # Optional, default: "*"
+#    default: false                                        # Optional, default: false, use as default event entry
 #    encoding: console                                     # Optional, default: console
 #    outputPaths: ["stdout"]                               # Optional, default: [stdout]
 #    lumberjack:                                           # Optional, default: nil
@@ -729,6 +731,7 @@ mux:
 #        certEntry: my-cert                                # Optional, default: "", reference of cert entry declared above
 #    middleware:
 #      ignore: [""]                                        # Optional, default: []
+#      errorModel: google                                  # Optional, default: google, [amazon, google] are supported options
 #      logging:
 #        enabled: true                                     # Optional, default: false
 #        ignore: [""]                                      # Optional, default: []
@@ -778,6 +781,7 @@ mux:
 #      jwt:
 #        enabled: true                                     # Optional, default: false
 #        ignore: [ "" ]                                    # Optional, default: []
+#        skipVerify: false                                 # Optional, default: false
 #        signerEntry: ""                                   # Optional, default: ""
 #        symmetric:                                        # Optional
 #          algorithm: ""                                   # Required, default: ""

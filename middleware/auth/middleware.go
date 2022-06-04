@@ -39,7 +39,7 @@ func Middleware(opts ...rkmidauth.Option) mux.MiddlewareFunc {
 				for k, v := range beforeCtx.Output.HeadersToReturn {
 					writer.Header().Set(k, v)
 				}
-				rkmuxmid.WriteJson(writer, beforeCtx.Output.ErrResp.Err.Code, beforeCtx.Output.ErrResp)
+				rkmuxmid.WriteJson(writer, beforeCtx.Output.ErrResp.Code(), beforeCtx.Output.ErrResp)
 				return
 			}
 

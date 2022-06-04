@@ -6,7 +6,6 @@
 package rkmuxcsrf
 
 import (
-	rkerror "github.com/rookie-ninja/rk-entry/v2/error"
 	"github.com/rookie-ninja/rk-entry/v2/middleware"
 	"github.com/rookie-ninja/rk-entry/v2/middleware/csrf"
 	"github.com/stretchr/testify/assert"
@@ -30,7 +29,7 @@ func TestMiddleware(t *testing.T) {
 	req, w := newReqAndWriter()
 
 	// assign any of error response
-	beforeCtx.Output.ErrResp = rkerror.NewForbidden("")
+	beforeCtx.Output.ErrResp = rkmid.GetErrorBuilder().New(http.StatusForbidden, "")
 	inter(userHandler).ServeHTTP(w, req)
 	assert.Equal(t, http.StatusForbidden, w.Code)
 

@@ -6,7 +6,7 @@
 package rkmuxauth
 
 import (
-	rkerror "github.com/rookie-ninja/rk-entry/v2/error"
+	rkmid "github.com/rookie-ninja/rk-entry/v2/middleware"
 	"github.com/rookie-ninja/rk-entry/v2/middleware/auth"
 	"github.com/stretchr/testify/assert"
 	"net/http"
@@ -28,7 +28,7 @@ func TestInterceptor(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// assign any of error response
-	beforeCtx.Output.ErrResp = rkerror.NewUnauthorized("")
+	beforeCtx.Output.ErrResp = rkmid.GetErrorBuilder().New(http.StatusUnauthorized, "")
 	beforeCtx.Output.HeadersToReturn["key"] = "value"
 	inter(userFunc).ServeHTTP(w, req)
 	assert.Equal(t, http.StatusUnauthorized, w.Code)

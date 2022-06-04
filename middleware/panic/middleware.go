@@ -29,8 +29,8 @@ func Middleware(opts ...rkmidpanic.Option) mux.MiddlewareFunc {
 			ctx := context.WithValue(req.Context(), rkmid.EntryNameKey, set.GetEntryName())
 			req = req.WithContext(ctx)
 
-			handlerFunc := func(resp *rkerror.ErrorResp) {
-				rkmuxmid.WriteJson(writer, resp.Err.Code, resp)
+			handlerFunc := func(resp rkerror.ErrorInterface) {
+				rkmuxmid.WriteJson(writer, resp.Code(), resp)
 			}
 			beforeCtx := set.BeforeCtx(rkmuxctx.GetEvent(req), rkmuxctx.GetLogger(req, writer), handlerFunc)
 			set.Before(beforeCtx)

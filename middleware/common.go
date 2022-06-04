@@ -9,7 +9,7 @@ package rkmuxmid
 import (
 	"bufio"
 	"encoding/json"
-	"github.com/rookie-ninja/rk-entry/v2/error"
+	rkmid "github.com/rookie-ninja/rk-entry/v2/middleware"
 	"github.com/streadway/handy/atomic"
 	"net"
 	"net/http"
@@ -23,7 +23,7 @@ func WriteJson(w http.ResponseWriter, code int, content interface{}) {
 
 	bytes, err := json.Marshal(content)
 	if err != nil {
-		internalErr, _ := json.Marshal(rkerror.NewInternalError("", err))
+		internalErr, _ := json.Marshal(rkmid.GetErrorBuilder().New(http.StatusInternalServerError, "Failed to marshal user response", err))
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write(internalErr)
 		return
@@ -31,7 +31,7 @@ func WriteJson(w http.ResponseWriter, code int, content interface{}) {
 
 	if _, err := w.Write(bytes); err != nil {
 		if err != http.ErrHandlerTimeout {
-			internalErr, _ := json.Marshal(rkerror.NewInternalError("", err))
+			internalErr, _ := json.Marshal(rkmid.GetErrorBuilder().New(http.StatusInternalServerError, "Failed to write to response", err))
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write(internalErr)
 			return

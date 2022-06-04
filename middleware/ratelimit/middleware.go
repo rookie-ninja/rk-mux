@@ -31,7 +31,7 @@ func Middleware(opts ...rkmidlimit.Option) mux.MiddlewareFunc {
 			set.Before(beforeCtx)
 
 			if beforeCtx.Output.ErrResp != nil {
-				rkmuxmid.WriteJson(writer, beforeCtx.Output.ErrResp.Err.Code, beforeCtx.Output.ErrResp)
+				rkmuxmid.WriteJson(writer, beforeCtx.Output.ErrResp.Code(), beforeCtx.Output.ErrResp)
 				return
 			}
 

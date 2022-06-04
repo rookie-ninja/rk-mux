@@ -6,7 +6,7 @@
 package rkmuxlimit
 
 import (
-	rkerror "github.com/rookie-ninja/rk-entry/v2/error"
+	rkmid "github.com/rookie-ninja/rk-entry/v2/middleware"
 	"github.com/rookie-ninja/rk-entry/v2/middleware/ratelimit"
 	"github.com/stretchr/testify/assert"
 	"net/http"
@@ -28,7 +28,7 @@ func TestMiddleware(t *testing.T) {
 	inter := Middleware(rkmidlimit.WithMockOptionSet(mock))
 	req, w := newReqAndWriter()
 	// assign any of error response
-	beforeCtx.Output.ErrResp = rkerror.NewTooManyRequests("")
+	beforeCtx.Output.ErrResp = rkmid.GetErrorBuilder().New(http.StatusTooManyRequests, "")
 	inter(userHandler).ServeHTTP(w, req)
 	assert.Equal(t, http.StatusTooManyRequests, w.Code)
 

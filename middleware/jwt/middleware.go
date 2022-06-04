@@ -35,7 +35,7 @@ func Interceptor(opts ...rkmidjwt.Option) mux.MiddlewareFunc {
 
 			// case 1: error response
 			if beforeCtx.Output.ErrResp != nil {
-				rkmuxmid.WriteJson(writer, beforeCtx.Output.ErrResp.Err.Code, beforeCtx.Output.ErrResp)
+				rkmuxmid.WriteJson(writer, beforeCtx.Output.ErrResp.Code(), beforeCtx.Output.ErrResp)
 				return
 			}
 
