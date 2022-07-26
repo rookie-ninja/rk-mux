@@ -29,7 +29,7 @@ import (
 	"github.com/rookie-ninja/rk-entry/v2/middleware/secure"
 	"github.com/rookie-ninja/rk-entry/v2/middleware/tracing"
 	"github.com/rookie-ninja/rk-mux/middleware/auth"
-	"github.com/rookie-ninja/rk-mux/middleware/cors"
+	rkmuxcors "github.com/rookie-ninja/rk-mux/middleware/cors"
 	"github.com/rookie-ninja/rk-mux/middleware/csrf"
 	"github.com/rookie-ninja/rk-mux/middleware/jwt"
 	"github.com/rookie-ninja/rk-mux/middleware/log"
@@ -48,6 +48,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 const (
@@ -223,6 +224,12 @@ func RegisterMuxEntryYAML(raw []byte) map[string]rkentry.Entry {
 				rkmidtrace.ToOptions(&element.Middleware.Trace, element.Name, MuxEntryType)...))
 		}
 
+		// cors middleware
+		if element.Middleware.Cors.Enabled {
+			inters = append(inters, rkmuxcors.Middleware(
+				rkmidcors.ToOptions(&element.Middleware.Cors, element.Name, MuxEntryType)...))
+		}
+
 		// jwt middleware
 		if element.Middleware.Jwt.Enabled {
 			inters = append(inters, rkmuxjwt.Interceptor(
@@ -239,12 +246,6 @@ func RegisterMuxEntryYAML(raw []byte) map[string]rkentry.Entry {
 		if element.Middleware.Csrf.Enabled {
 			inters = append(inters, rkmuxcsrf.Middleware(
 				rkmidcsrf.ToOptions(&element.Middleware.Csrf, element.Name, MuxEntryType)...))
-		}
-
-		// cors middleware
-		if element.Middleware.Cors.Enabled {
-			inters = append(inters, rkmuxcors.Middleware(
-				rkmidcors.ToOptions(&element.Middleware.Cors, element.Name, MuxEntryType)...))
 		}
 
 		// meta middleware
@@ -485,7 +486,10 @@ func (entry *MuxEntry) Interrupt(ctx context.Context) {
 	}
 
 	if entry.Server != nil {
-		if err := entry.Server.Shutdown(context.Background()); err != nil {
+		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+
+		if err := entry.Server.Shutdown(ctx); err != nil {
 			event.AddErr(err)
 			logger.Warn("Error occurs while stopping http server")
 		}
