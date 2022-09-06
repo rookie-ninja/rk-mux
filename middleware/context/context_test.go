@@ -24,6 +24,11 @@ func newReqAndWriter() (*http.Request, *httptest.ResponseRecorder) {
 	return req, writer
 }
 
+func TestGormCtx(t *testing.T) {
+	req, w := newReqAndWriter()
+	assert.NotNil(t, GormCtx(req, w))
+}
+
 func TestGetIncomingHeaders(t *testing.T) {
 	req, _ := newReqAndWriter()
 	req.Header.Set("ut-key", "ut-value")
