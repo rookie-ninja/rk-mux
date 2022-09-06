@@ -6,7 +6,7 @@ require (
 	github.com/golang-jwt/jwt/v4 v4.4.2
 	github.com/gorilla/mux v1.8.0
 	github.com/prometheus/client_golang v1.12.2
-	github.com/rookie-ninja/rk-entry/v2 v2.2.4
+	github.com/rookie-ninja/rk-entry/v2 v2.2.5
 	github.com/rookie-ninja/rk-logger v1.2.11
 	github.com/rookie-ninja/rk-query v1.2.14
 	github.com/streadway/handy v0.0.0-20190108123426-d5acb3125c2a
