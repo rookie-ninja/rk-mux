@@ -44,7 +44,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/pprof"
-	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -120,7 +120,7 @@ type MuxEntry struct {
 
 // RegisterMuxEntryYAML register Mux entries with provided config file (Must YAML file).
 //
-// Currently, support two ways to provide config file path.
+// Currently, support two ways to provide config file filepath.
 // 1: With function parameters
 // 2: With command line flag "--rkboot" described in rkcommon.BootConfigPathFlagKey (Will override function parameter if exists)
 // Command line flag has high priority which would override function parameter
@@ -398,16 +398,16 @@ func (entry *MuxEntry) Bootstrap(ctx context.Context) {
 			})
 
 		entry.Router.NewRoute().Methods(http.MethodGet).Path(entry.PProfEntry.Path).HandlerFunc(pprof.Index)
-		entry.Router.NewRoute().Methods(http.MethodGet).Path(path.Join(entry.PProfEntry.Path, "cmdline")).HandlerFunc(pprof.Cmdline)
-		entry.Router.NewRoute().Methods(http.MethodGet).Path(path.Join(entry.PProfEntry.Path, "profile")).HandlerFunc(pprof.Profile)
-		entry.Router.NewRoute().Methods(http.MethodGet, http.MethodPost).Path(path.Join(entry.PProfEntry.Path, "symbol")).HandlerFunc(pprof.Symbol)
-		entry.Router.NewRoute().Methods(http.MethodGet).Path(path.Join(entry.PProfEntry.Path, "trace")).HandlerFunc(pprof.Trace)
-		entry.Router.NewRoute().Methods(http.MethodGet).Path(path.Join(entry.PProfEntry.Path, "allocs")).HandlerFunc(pprof.Handler("allocs").ServeHTTP)
-		entry.Router.NewRoute().Methods(http.MethodGet).Path(path.Join(entry.PProfEntry.Path, "block")).HandlerFunc(pprof.Handler("block").ServeHTTP)
-		entry.Router.NewRoute().Methods(http.MethodGet).Path(path.Join(entry.PProfEntry.Path, "goroutine")).HandlerFunc(pprof.Handler("goroutine").ServeHTTP)
-		entry.Router.NewRoute().Methods(http.MethodGet).Path(path.Join(entry.PProfEntry.Path, "heap")).HandlerFunc(pprof.Handler("heap").ServeHTTP)
-		entry.Router.NewRoute().Methods(http.MethodGet).Path(path.Join(entry.PProfEntry.Path, "mutex")).HandlerFunc(pprof.Handler("mutex").ServeHTTP)
-		entry.Router.NewRoute().Methods(http.MethodGet).Path(path.Join(entry.PProfEntry.Path, "threadcreate")).HandlerFunc(pprof.Handler("threadcreate").ServeHTTP)
+		entry.Router.NewRoute().Methods(http.MethodGet).Path(filepath.Join(entry.PProfEntry.Path, "cmdline")).HandlerFunc(pprof.Cmdline)
+		entry.Router.NewRoute().Methods(http.MethodGet).Path(filepath.Join(entry.PProfEntry.Path, "profile")).HandlerFunc(pprof.Profile)
+		entry.Router.NewRoute().Methods(http.MethodGet, http.MethodPost).Path(filepath.Join(entry.PProfEntry.Path, "symbol")).HandlerFunc(pprof.Symbol)
+		entry.Router.NewRoute().Methods(http.MethodGet).Path(filepath.Join(entry.PProfEntry.Path, "trace")).HandlerFunc(pprof.Trace)
+		entry.Router.NewRoute().Methods(http.MethodGet).Path(filepath.Join(entry.PProfEntry.Path, "allocs")).HandlerFunc(pprof.Handler("allocs").ServeHTTP)
+		entry.Router.NewRoute().Methods(http.MethodGet).Path(filepath.Join(entry.PProfEntry.Path, "block")).HandlerFunc(pprof.Handler("block").ServeHTTP)
+		entry.Router.NewRoute().Methods(http.MethodGet).Path(filepath.Join(entry.PProfEntry.Path, "goroutine")).HandlerFunc(pprof.Handler("goroutine").ServeHTTP)
+		entry.Router.NewRoute().Methods(http.MethodGet).Path(filepath.Join(entry.PProfEntry.Path, "heap")).HandlerFunc(pprof.Handler("heap").ServeHTTP)
+		entry.Router.NewRoute().Methods(http.MethodGet).Path(filepath.Join(entry.PProfEntry.Path, "mutex")).HandlerFunc(pprof.Handler("mutex").ServeHTTP)
+		entry.Router.NewRoute().Methods(http.MethodGet).Path(filepath.Join(entry.PProfEntry.Path, "threadcreate")).HandlerFunc(pprof.Handler("threadcreate").ServeHTTP)
 		entry.PProfEntry.Bootstrap(ctx)
 	}
 
