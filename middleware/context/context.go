@@ -23,6 +23,7 @@ import (
 var (
 	noopTracerProvider = trace.NewNoopTracerProvider()
 	noopEvent          = rkquery.NewEventFactory().CreateEventNoop()
+	pointerCreator     rkcursor.PointerCreator
 )
 
 // GetIncomingHeaders extract call-scoped incoming headers
@@ -49,12 +50,23 @@ func SetHeaderToClient(writer http.ResponseWriter, key, value string) {
 	writer.Header().Set(key, value)
 }
 
+// SetPointerCreator override  rkcursor.PointerCreator
+func SetPointerCreator(creator rkcursor.PointerCreator) {
+	pointerCreator = creator
+}
+
 // GetCursor create rkcursor.Cursor instance
 func GetCursor(req *http.Request, writer http.ResponseWriter) *rkcursor.Cursor {
-	return rkcursor.NewCursor(
+	res := rkcursor.NewCursor(
 		rkcursor.WithLogger(GetLogger(req, writer)),
 		rkcursor.WithEvent(GetEvent(req)),
 		rkcursor.WithEntryNameAndType(GetEntryName(req), "MuxEntry"))
+
+	if pointerCreator != nil {
+		res.Creator = pointerCreator
+	}
+
+	return res
 }
 
 // GetEvent extract takes the call-scoped EventData from middleware.
