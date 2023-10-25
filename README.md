@@ -353,7 +353,7 @@ User can start multiple [gorilla/mux](https://github.com/gorilla/mux) instances 
 |-----------------|--------------------------------------------------------------------|----------|---------------|
 | mux.sw.enabled  | Optional, Enable swagger service over gin server                   | boolean  | false         |
 | mux.sw.path     | Optional, The path access swagger service from web                 | string   | /sw           |
-| mux.sw.jsonPath | Optional, Where the swagger.json files are stored locally          | string   | ""            |
+| mux.sw.jsonPath | Optional, Where the swagger.json files are stored locally          | []string | [""]          |
 | mux.sw.headers  | Optional, Headers would be sent to caller as scheme of [key:value] | []string | []            |
 
 ### Docs (RapiDoc)
@@ -361,7 +361,7 @@ User can start multiple [gorilla/mux](https://github.com/gorilla/mux) instances 
 |----------------------|----------------------------------------------------------------------------------------|----------|---------------|
 | mux.docs.enabled     | Optional, Enable RapiDoc service over gin server                                       | boolean  | false         |
 | mux.docs.path        | Optional, The path access docs service from web                                        | string   | /docs         |
-| mux.docs.jsonPath    | Optional, Where the swagger.json or open API files are stored locally                  | string   | ""            |
+| mux.docs.jsonPath    | Optional, Where the swagger.json or open API files are stored locally                  | []string | [""]          |
 | mux.docs.headers     | Optional, Headers would be sent to caller as scheme of [key:value]                     | []string | []            |
 | mux.docs.style.theme | Optional, light and dark are supported options                                         | string   | []            |
 | mux.docs.debug       | Optional, Enable debugging mode in RapiDoc which can be used as the same as Swagger UI | boolean  | false         |
@@ -698,7 +698,7 @@ mux:
 #    sw:
 #      enabled: true                                       # Optional, default: false
 #      path: "sw"                                          # Optional, default: "sw"
-#      jsonPath: ""                                        # Optional
+#      jsonPath: [""]                                      # Optional
 #      headers: ["sw:rk"]                                  # Optional, default: []
 #    docs:
 #      enabled: true                                       # Optional, default: false
